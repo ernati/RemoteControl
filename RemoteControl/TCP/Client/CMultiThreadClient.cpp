@@ -1,8 +1,8 @@
 #pragma once
 
-#include <CSingleThreadClient.h>
+#include <CMultiThreadClient.h>
 
-CSingleThreadClient::CSingleThreadClient()
+CMultiThreadClient::CMultiThreadClient()
 {
 	ZeroMemory(&m_wsa, sizeof(m_wsa));
 
@@ -11,7 +11,7 @@ CSingleThreadClient::CSingleThreadClient()
 	m_port = 0;
 }
 
-CSingleThreadClient::~CSingleThreadClient()
+CMultiThreadClient::~CMultiThreadClient()
 {
 	if (m_CommunicationSocket != INVALID_SOCKET)
 		closesocket(m_CommunicationSocket);
@@ -22,7 +22,7 @@ CSingleThreadClient::~CSingleThreadClient()
 /*
 * public method
 */
-int CSingleThreadClient::StartClient(int port)
+int CMultiThreadClient::StartClient(int port)
 {
 	m_port = port;
 
@@ -50,11 +50,8 @@ int CSingleThreadClient::StartClient(int port)
 	return 0;
 }
 
-int CSingleThreadClient::Communication()
+int CMultiThreadClient::Communication()
 {
-	char sendBuffer[1024];
-	char recvBuffer[1024];
-
 	//서버로의 데이터 전송을 맡을 스레드 생성
 	m_hSendThread = ::CreateThread(
 		NULL,
@@ -70,7 +67,7 @@ int CSingleThreadClient::Communication()
 	int recvByte = 0;
 	while (true)
 	{
-		recvByte = recv(m_CommunicationSocket, recvBuffer, sizeof(recvBuffer), 0);
+		recvByte = recv(m_CommunicationSocket, m_recvBuffer, sizeof(m_recvBuffer), 0);
 		if (recvByte == SOCKET_ERROR)
 		{
 			printf("recv() failed\n");
@@ -82,7 +79,7 @@ int CSingleThreadClient::Communication()
 			break;
 		}
 
-		printf("서버로부터 받은 데이터: %s\n", recvBuffer);
+		printf("서버로부터 받은 데이터: %s\n", m_recvBuffer);
 	}
 
 	return 0;
@@ -92,7 +89,7 @@ int CSingleThreadClient::Communication()
 /*
 * private method
 */
-bool CSingleThreadClient::InitWinsock()
+bool CMultiThreadClient::InitWinsock()
 {
 	if (WSAStartup(MAKEWORD(2, 2), &m_wsa) != 0)
 	{
@@ -103,7 +100,7 @@ bool CSingleThreadClient::InitWinsock()
 	return true;
 }
 
-bool CSingleThreadClient::CreateCommunicationSocket()
+bool CMultiThreadClient::CreateCommunicationSocket()
 {
 	m_CommunicationSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (m_CommunicationSocket == INVALID_SOCKET)
@@ -115,7 +112,7 @@ bool CSingleThreadClient::CreateCommunicationSocket()
 	return true;
 }
 
-bool CSingleThreadClient::ConnectServer()
+bool CMultiThreadClient::ConnectServer()
 {
 	m_Serveraddr.sin_family = AF_INET;
 	m_Serveraddr.sin_port = htons(m_port);
@@ -131,7 +128,7 @@ bool CSingleThreadClient::ConnectServer()
 
 DWORD WINAPI SendData(LPVOID lpParam)
 {
-	CSingleThreadClient* pClient = (CSingleThreadClient*)lpParam;
+	CMultiThreadClient* pClient = (CMultiThreadClient*)lpParam;
 	SOCKET hSocket = pClient->GetCommunicationSocket();
 	char* sendBuffer = pClient->GetSendBuffer();
 

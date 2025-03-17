@@ -1,8 +1,8 @@
 #pragma once
 
-#include <CSingleThreadServer.h>
+#include <CMultiThreadServer.h>
 
-CSingleThreadServer::CSingleThreadServer()
+CMultiThreadServer::CMultiThreadServer()
 {
 	ZeroMemory(&m_wsa, sizeof(m_wsa));
 
@@ -23,7 +23,7 @@ CSingleThreadServer::CSingleThreadServer()
 	dwRecvThreadID = 0;
 }
 
-CSingleThreadServer::~CSingleThreadServer()
+CMultiThreadServer::~CMultiThreadServer()
 {
 	if (m_listenSocket != INVALID_SOCKET)
 		closesocket(m_listenSocket);
@@ -42,7 +42,7 @@ CSingleThreadServer::~CSingleThreadServer()
 
 
 
-int CSingleThreadServer::StartServer(int port)
+int CMultiThreadServer::StartServer(int port)
 {
 	m_port = port;
 
@@ -76,15 +76,9 @@ int CSingleThreadServer::StartServer(int port)
 	return 0;
 }
 
-int CSingleThreadServer::Communication()
+int CMultiThreadServer::Communication()
 {
 	int addrLen = sizeof(m_Clientaddr);
-	m_CommunicationSocket = accept(m_listenSocket, (SOCKADDR*)&m_Clientaddr, &addrLen);
-	if (INVALID_SOCKET == m_CommunicationSocket)
-	{
-		printf("accept() failed\n");
-		return -5;
-	}
 
 	while (INVALID_SOCKET != ( m_CommunicationSocket = accept(m_listenSocket, (SOCKADDR*)&m_Clientaddr, &addrLen)))
 	{
@@ -112,7 +106,7 @@ int CSingleThreadServer::Communication()
 	return 0;
 }
 
-void CSingleThreadServer::CloseCommunication()
+void CMultiThreadServer::CloseCommunication()
 {
 	if (m_hSendThread != NULL)
 	{
@@ -135,7 +129,7 @@ void CSingleThreadServer::CloseCommunication()
 */
 
 
-bool CSingleThreadServer::InitWinsock()
+bool CMultiThreadServer::InitWinsock()
 {
 	if (0 != WSAStartup(MAKEWORD(2, 2), &m_wsa))
 	{
@@ -146,7 +140,7 @@ bool CSingleThreadServer::InitWinsock()
 	return true;
 }
 
-bool CSingleThreadServer::CreateListenSocket()
+bool CMultiThreadServer::CreateListenSocket()
 {
 	m_listenSocket = socket(AF_INET, SOCK_STREAM, 0); //TCP
 	if (INVALID_SOCKET == m_listenSocket)
@@ -158,7 +152,7 @@ bool CSingleThreadServer::CreateListenSocket()
 	return true;
 }
 
-bool CSingleThreadServer::BindSocket()
+bool CMultiThreadServer::BindSocket()
 {
 	m_listenaddr.sin_family = AF_INET;
 	m_listenaddr.sin_port = htons(m_port);
@@ -173,13 +167,16 @@ bool CSingleThreadServer::BindSocket()
 	return true;
 }
 
-bool CSingleThreadServer::ListenSocket()
+bool CMultiThreadServer::ListenSocket()
 {
+
 	if (SOCKET_ERROR == listen(m_listenSocket, SOMAXCONN))
 	{
 		printf("listen() failed\n");
 		return false;
 	}
+
+	printf("[Server] Start Listening...\n");
 
 	return true;
 }
@@ -187,7 +184,7 @@ bool CSingleThreadServer::ListenSocket()
 
 DWORD WINAPI SendData(LPVOID lpParam)
 {
-	CSingleThreadServer* pServer = (CSingleThreadServer*)lpParam;
+	CMultiThreadServer* pServer = (CMultiThreadServer*)lpParam;
 	SOCKET hSocket = pServer->GetCommunicationSocket();
 	char* pSendBuffer = pServer->GetSendBuffer();
 
@@ -209,7 +206,7 @@ DWORD WINAPI SendData(LPVOID lpParam)
 
 DWORD WINAPI RecvData(LPVOID lpParam)
 {
-	CSingleThreadServer* pServer = (CSingleThreadServer*)lpParam;
+	CMultiThreadServer* pServer = (CMultiThreadServer*)lpParam;
 	SOCKET hSocket = pServer->GetCommunicationSocket();
 	char* pRecvBuffer = pServer->GetRecvBuffer();
 

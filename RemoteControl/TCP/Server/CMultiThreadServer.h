@@ -3,12 +3,12 @@
 #include <cstdio>
 #pragma comment(lib, "ws2_32")
 
-class CSingleThreadServer
+class CMultiThreadServer
 {
 	//method
 public:
-	CSingleThreadServer();
-	virtual ~CSingleThreadServer();
+	CMultiThreadServer();
+	virtual ~CMultiThreadServer();
 
 	//1. 서버 시작 - 소켓 생성, 바인딩, 리슨
 	int StartServer(int port);

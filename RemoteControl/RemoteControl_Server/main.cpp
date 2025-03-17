@@ -1,9 +1,14 @@
-#include <CSingleThreadServer.h>
+#include <CMultiThreadServer.h>
 
 int main(void)
 {
-	CSingleThreadServer server;
-	server.StartServer(9000);
+	int nRet = 0;
+	CMultiThreadServer server;
 
-	return 0;
+	nRet = server.StartServer(9000);
+	if (nRet < 0) {
+		printf("server.StartServer() failed, nRet:%d\n", nRet);
+	}
+
+	return nRet;
 }

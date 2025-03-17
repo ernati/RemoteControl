@@ -3,12 +3,12 @@
 #include <cstdio>
 #pragma comment(lib, "ws2_32")
 
-class CSingleThreadClient
+class CMultiThreadClient
 {
 	//method
 public:
-	CSingleThreadClient();
-	virtual ~CSingleThreadClient();
+	CMultiThreadClient();
+	virtual ~CMultiThreadClient();
 
 	//1. 클라이언트 시작 - 소켓 생성, 커넥트
 	int StartClient(int port);
