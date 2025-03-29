@@ -8,7 +8,10 @@ CMultiThreadClient::CMultiThreadClient()
 
 	m_CommunicationSocket = INVALID_SOCKET;
 	ZeroMemory(&m_Serveraddr, sizeof(m_Serveraddr));
+	ZeroMemory(&message, sizeof(message));
 	m_port = 0;
+
+	m_hBitmap = NULL;
 }
 
 CMultiThreadClient::~CMultiThreadClient()
@@ -52,15 +55,15 @@ int CMultiThreadClient::StartClient(int port)
 
 int CMultiThreadClient::Communication()
 {
-	//서버로의 데이터 전송을 맡을 스레드 생성
-	m_hSendThread = ::CreateThread(
-		NULL,
-		0,
-		SendData,
-		(LPVOID)this,
-		0,
-		&dwSendThreadID
-	);
+	////서버로의 데이터 전송을 맡을 스레드 생성
+	//m_hSendThread = ::CreateThread(
+	//	NULL,
+	//	0,
+	//	SendData,
+	//	(LPVOID)this,
+	//	0,
+	//	&dwSendThreadID
+	//);
 
 	// 서버로부터의 데이터 수신
 	printf("[Client] RecvData Start!\n");
@@ -79,7 +82,10 @@ int CMultiThreadClient::Communication()
 			break;
 		}
 
-		printf("서버로부터 받은 데이터: %s\n", m_recvBuffer);
+		printf("Recv BitMap Data!\n");
+
+		//받은 데이터 처리
+		m_hBitmap = ReconstructBitmapFromMessage(m_recvBuffer, recvByte);
 	}
 
 	return 0;
@@ -126,6 +132,39 @@ bool CMultiThreadClient::ConnectServer()
 	return true;
 }
 
+
+HBITMAP CMultiThreadClient::ReconstructBitmapFromMessage(const char* pMessageBuffer, DWORD messageSize)
+{
+	if (!pMessageBuffer || messageSize < sizeof(Message))
+		return NULL;
+
+	// Message 구조체를 읽어들임
+	const Message* pMsg = reinterpret_cast<const Message*>(pMessageBuffer);
+	if (messageSize < sizeof(Message) + pMsg->dataSize)
+		return NULL;
+
+	// BITMAPINFO 구조체 생성 (비트맵 헤더만 필요)
+	BITMAPINFO bmi;
+	ZeroMemory(&bmi, sizeof(BITMAPINFO));
+	bmi.bmiHeader = pMsg->bmiHeader;
+
+	// CreateDIBSection을 사용해 새 비트맵 생성
+	HDC hdcScreen = GetDC(NULL);
+	void* pBits = nullptr;
+	HBITMAP hNewBitmap = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &pBits, NULL, 0);
+	ReleaseDC(NULL, hdcScreen);
+
+	if (!hNewBitmap || !pBits)
+		return NULL;
+
+	// Message 버퍼에서 픽셀 데이터를 복사
+	memcpy(pBits, pMessageBuffer + sizeof(Message), pMsg->dataSize);
+
+	return hNewBitmap;
+}
+
+
+
 DWORD WINAPI SendData(LPVOID lpParam)
 {
 	CMultiThreadClient* pClient = (CMultiThreadClient*)lpParam;
@@ -149,3 +188,4 @@ DWORD WINAPI SendData(LPVOID lpParam)
 
 	return 0;
 }
+

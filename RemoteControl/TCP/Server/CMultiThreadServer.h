@@ -1,7 +1,10 @@
 #pragma once
+#include <Message.h>
 #include <WinSock2.h>
 #include <cstdio>
 #pragma comment(lib, "ws2_32")
+
+
 
 class CMultiThreadServer
 {
@@ -20,6 +23,9 @@ public:
 	SOCKET GetCommunicationSocket() { return m_CommunicationSocket; }
 	char* GetSendBuffer() { return m_sendBuffer; }
 	char* GetRecvBuffer() { return m_recvBuffer; }
+	HBITMAP GetBitMap() { return m_hBitmap; }
+
+	char* CreateBitmapMessage(HBITMAP hBitmap, DWORD& outMessageSize);
 
 private:
 	//1. 서버 시작 - 소켓 생성, 바인딩, 리슨
@@ -42,6 +48,9 @@ private:
 
 
 	//member
+public:
+	HBITMAP m_hBitmap;
+
 private:
 	//윈속
 	WSADATA m_wsa;
@@ -56,8 +65,11 @@ private:
 	int m_port;
 
 	//클라이언트와의 통신 버퍼
-	char m_sendBuffer[1024];
-	char m_recvBuffer[1024];
+	char m_sendBuffer[102400];
+	char m_recvBuffer[102400];
+
+	//메시지 데이터
+	Message message;
 
 	//클라이언트로의 데이터 전송을 맡을 스레드 핸들
 	HANDLE m_hSendThread;
@@ -66,6 +78,7 @@ private:
 	//클라이언트로부터 데이터 수신을 맡을 스레드 핸들
 	HANDLE m_hRecvThread;
 	DWORD dwRecvThreadID;
+
 };
 
 
