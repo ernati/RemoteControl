@@ -25,7 +25,7 @@ public:
 	char* GetRecvBuffer() { return m_recvBuffer; }
 	HBITMAP GetBitMap() { return m_hBitmap; }
 
-	char* CreateBitmapMessage(HBITMAP hBitmap, DWORD& outMessageSize);
+	char* CreateBitmapMessage(HBITMAP hBitmap, DWORD& outMessageSize, Message& message);
 
 private:
 	//1. 서버 시작 - 소켓 생성, 바인딩, 리슨

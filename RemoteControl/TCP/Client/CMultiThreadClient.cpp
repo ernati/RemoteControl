@@ -12,6 +12,13 @@ CMultiThreadClient::CMultiThreadClient()
 	m_port = 0;
 
 	m_hBitmap = NULL;
+
+	hMutex = CreateMutex(NULL, FALSE, L"Global\\MyGlobalMutex");
+	if (hMutex == NULL) {
+		printf("CreateMutex 실패, 오류 코드 : %d\n", GetLastError());
+		return;
+	}
+	printf("전역 mutex가 생성되었습니다.\n");
 }
 
 CMultiThreadClient::~CMultiThreadClient()
@@ -70,6 +77,8 @@ int CMultiThreadClient::Communication()
 	int recvByte = 0;
 	while (true)
 	{
+		GetMutex();
+		
 		recvByte = recv(m_CommunicationSocket, m_recvBuffer, sizeof(m_recvBuffer), 0);
 		if (recvByte == SOCKET_ERROR)
 		{
@@ -81,6 +90,10 @@ int CMultiThreadClient::Communication()
 			printf("서버와의 연결이 끊어졌습니다.\n");
 			break;
 		}
+
+		//ReleaseMutex
+		// mutex 해제
+		ReleaseMutex_Custom();
 
 		printf("Recv BitMap Data!\n");
 
@@ -140,7 +153,7 @@ HBITMAP CMultiThreadClient::ReconstructBitmapFromMessage(const char* pMessageBuf
 
 	// Message 구조체를 읽어들임
 	const Message* pMsg = reinterpret_cast<const Message*>(pMessageBuffer);
-	if (messageSize < sizeof(Message) + pMsg->dataSize)
+	if (messageSize < sizeof(Message) )
 		return NULL;
 
 	// BITMAPINFO 구조체 생성 (비트맵 헤더만 필요)
@@ -158,7 +171,7 @@ HBITMAP CMultiThreadClient::ReconstructBitmapFromMessage(const char* pMessageBuf
 		return NULL;
 
 	// Message 버퍼에서 픽셀 데이터를 복사
-	memcpy(pBits, pMessageBuffer + sizeof(Message), pMsg->dataSize);
+	memcpy(pBits, pMessageBuffer + SIZE_OF_BITMAPINFOHEADER + SIZE_OF_DWORD, pMsg->pixelDataSize);
 
 	return hNewBitmap;
 }
@@ -187,5 +200,36 @@ DWORD WINAPI SendData(LPVOID lpParam)
 	}
 
 	return 0;
+}
+
+
+
+void CMultiThreadClient::GetMutex()
+{
+	DWORD dwWaitResult = WaitForSingleObject(hMutex, INFINITE);
+	switch (dwWaitResult) {
+	case WAIT_OBJECT_0:
+		printf("mutex 소유권 획득 성공. 임계 구역에 진입합니다.\n");
+		// 여기서 임계 구역 내 작업 수행
+		// 예제: 2초 동안 대기 (임계 구역 내 작업을 시뮬레이션)
+		Sleep(2000);
+		break;
+	case WAIT_ABANDONED:
+		printf("mutex가 포기되었습니다.\n");
+		break;
+	default:
+		printf("WaitForSingleObject 실패, 오류 코드: %d\n", GetLastError());
+		break;
+	}
+}
+
+void CMultiThreadClient::ReleaseMutex_Custom()
+{
+	if (!ReleaseMutex(hMutex)) {
+		printf("ReleaseMutex 실패, 오류 코드: %d\n", GetLastError());
+	}
+	else {
+		printf("mutex가 해제되었습니다.\n");
+	}
 }
 

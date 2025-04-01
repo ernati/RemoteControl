@@ -23,6 +23,9 @@ public:
 
 	HBITMAP ReconstructBitmapFromMessage(const char* pMessageBuffer, DWORD messageSize);
 
+	void GetMutex();
+	void ReleaseMutex_Custom();
+
 private:
 	//1. 클라이언트 시작 - 소켓 생성, 커넥트
 	//1.1 윈속 라이브러리 초기화
@@ -35,6 +38,8 @@ private:
 
 public:
 	HBITMAP m_hBitmap;
+	HANDLE hMutex;
+
 
 private:
 	//member
@@ -63,4 +68,8 @@ private:
 };
 
 DWORD WINAPI SendData(LPVOID lpParam);
+
+
+void GetMutex();
+void ReleaseMutex();
 

@@ -186,7 +186,7 @@ bool CMultiThreadServer::ListenSocket()
 }
 
 
-char* CMultiThreadServer::CreateBitmapMessage(HBITMAP hBitmap, DWORD& outMessageSize)
+char* CMultiThreadServer::CreateBitmapMessage(HBITMAP hBitmap, DWORD& outMessageSize, Message& message)
 {
 	if (!hBitmap)
 		return nullptr;
@@ -223,15 +223,16 @@ char* CMultiThreadServer::CreateBitmapMessage(HBITMAP hBitmap, DWORD& outMessage
 	DWORD dataSize = bih.biSizeImage;
 
 	// 픽셀 데이터를 담을 버퍼를 할당
-	char* pPixelBuffer = new char[dataSize];
-	if (!pPixelBuffer)
+	message.pixelData = new char[dataSize];
+	if (!message.pixelData) {
 		return nullptr;
+	}
 
 	hdcScreen = GetDC(NULL);
-	if (0 == GetDIBits(hdcScreen, hBitmap, 0, bm.bmHeight, pPixelBuffer, reinterpret_cast<BITMAPINFO*>(&bih), DIB_RGB_COLORS))
+	if (0 == GetDIBits(hdcScreen, hBitmap, 0, bm.bmHeight, message.pixelData, reinterpret_cast<BITMAPINFO*>(&bih), DIB_RGB_COLORS))
 	{
+		delete[] message.pixelData;
 		ReleaseDC(NULL, hdcScreen);
-		delete[] pPixelBuffer;
 		return nullptr;
 	}
 	ReleaseDC(NULL, hdcScreen);
@@ -241,14 +242,13 @@ char* CMultiThreadServer::CreateBitmapMessage(HBITMAP hBitmap, DWORD& outMessage
 
 	// Message 구조체를 채움
 	ZeroMemory(m_sendBuffer, sizeof(m_sendBuffer));
-	Message* pMsg = reinterpret_cast<Message*>(m_sendBuffer);
-	pMsg->bmiHeader = bih;
-	pMsg->dataSize = dataSize;
+	message.bmiHeader = bih;
+	message.pixelDataSize = dataSize;
 
 	// 픽셀 데이터를 Message 구조체 뒤에 복사
-	memcpy(m_sendBuffer + sizeof(Message), pPixelBuffer, dataSize);
+	memcpy(m_sendBuffer, &message, sizeof(Message));
 
-	delete[] pPixelBuffer;
+	delete[] message.pixelData;
 	return m_sendBuffer;
 }
 
@@ -283,16 +283,20 @@ DWORD WINAPI SendData(LPVOID lpParam)
 		//scanf_s("%s", pSendBuffer);
 		//if (strcmp(pSendBuffer, "EXIT") == 0)	break;
 
+		Message tmpMessage = { 0, };
+
 		//Bitmap 데이터가 NULL이 아닐경우, 전송할 데이터를 버퍼에 담는다.
 		if (pServer->GetBitMap() != NULL) {
 
-			pServer->CreateBitmapMessage(pServer->GetBitMap(), dwSendSize);
+			pServer->CreateBitmapMessage(pServer->GetBitMap(), dwSendSize, tmpMessage);
 
 			printf("Send BitMap Data!\n");
 
 			//3.2 사용자가 입력한 문자열을 서버에 전송한다.
 			::send(hSocket, pSendBuffer, strlen(pSendBuffer) + 1, 0);
 		}
+
+		Sleep(100);
 
 		
 	}
