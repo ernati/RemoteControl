@@ -20,11 +20,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         return 0;
 
     case WM_TIMER:
-        if (wParam == 1) {
-            // 1. 설정된 시간마다 화면출력
-            if (client->m_hBitmap != NULL) {
-                InvalidateRect(hwnd, NULL, TRUE);
-            }
+        // 1. 설정된 시간마다 화면출력
+
+        if (client->m_hBitmap != NULL) {
+            printf("화면을 출력합니다!\n");
+            InvalidateRect(hwnd, NULL, TRUE);
         }
         return 0;
 
@@ -48,7 +48,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             // 3. 획득한 기존 DC와 동일한 속성을 가지는 DC를 메모리에 생성하고, 그 핸들을 획득. - 이미지 처리는 메모리 DC에서 수행.
             // SelectObject - DC가 특정 GDI 객체( 여기서는 비트맵 )을 선택하도록 하여, 이후 그리기 작업이 해당 객체의 속성을 사용하도록 함.
             HDC hMemDC = CreateCompatibleDC(hdc);
+            if (hMemDC == NULL) {
+                printf("CreateCompatibleDC Fail!\n");
+            }
+
             HBITMAP hOldBmp = (HBITMAP)SelectObject(hMemDC, client->m_hBitmap); // hOldBmp - 이전에 DC에 선택되어 있던 비트맵 객체의 핸들을 저장
+            if (hOldBmp == NULL) {
+                printf("SelectObject Fail!\n");
+            }
 
             // 4. GetObject - 비트맵 정보를 버퍼( BITMAP 구조체 )에 저장
             BITMAP bm;
@@ -81,6 +88,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
 DWORD WINAPI ThreadFunction(LPVOID lpParam)
 {
+    // 콘솔 할당 및 표준 출력 재지정
+    AllocConsole();
+    FILE* pCout;
+    freopen_s(&pCout, "CONOUT$", "w", stdout);
+    printf("콘솔 창이 할당되었습니다.\n");
+    
+    
     // lpParam을 사용하여 전달된 데이터를 처리할 수 있습니다.
 
     HINSTANCE hInstance = GetModuleHandle(NULL);

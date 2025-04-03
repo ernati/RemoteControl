@@ -133,6 +133,7 @@ void CMultiThreadServer::CloseCommunication()
 */
 
 
+
 bool CMultiThreadServer::InitWinsock()
 {
 	if (0 != WSAStartup(MAKEWORD(2, 2), &m_wsa))
@@ -223,22 +224,22 @@ char* CMultiThreadServer::CreateBitmapMessage(HBITMAP hBitmap, DWORD& outMessage
 	DWORD dataSize = bih.biSizeImage;
 
 	// 픽셀 데이터를 담을 버퍼를 할당
-	message.pixelData = new char[dataSize];
+	/*message.pixelData = new char[dataSize];
 	if (!message.pixelData) {
 		return nullptr;
-	}
+	}*/
 
 	hdcScreen = GetDC(NULL);
 	if (0 == GetDIBits(hdcScreen, hBitmap, 0, bm.bmHeight, message.pixelData, reinterpret_cast<BITMAPINFO*>(&bih), DIB_RGB_COLORS))
 	{
-		delete[] message.pixelData;
+		//delete[] message.pixelData;
 		ReleaseDC(NULL, hdcScreen);
 		return nullptr;
 	}
 	ReleaseDC(NULL, hdcScreen);
 
-	// Message 버퍼 전체 크기: Message 구조체 크기 + 픽셀 데이터 크기
-	outMessageSize = sizeof(Message) + dataSize;
+	// Message 버퍼 전체 크기: Message 구조체 크기
+	outMessageSize = sizeof(Message);
 
 	// Message 구조체를 채움
 	ZeroMemory(m_sendBuffer, sizeof(m_sendBuffer));
@@ -248,7 +249,7 @@ char* CMultiThreadServer::CreateBitmapMessage(HBITMAP hBitmap, DWORD& outMessage
 	// 픽셀 데이터를 Message 구조체 뒤에 복사
 	memcpy(m_sendBuffer, &message, sizeof(Message));
 
-	delete[] message.pixelData;
+	//delete[] message.pixelData;
 	return m_sendBuffer;
 }
 
@@ -261,7 +262,18 @@ char* CMultiThreadServer::CreateBitmapMessage(HBITMAP hBitmap, DWORD& outMessage
 
 
 
-
+int sendn(SOCKET sock, const char* buffer, int totalBytes) {
+	int totalSent = 0;
+	while (totalSent < totalBytes) {
+		int n = send(sock, buffer + totalSent, totalBytes - totalSent, 0);
+		if (n == SOCKET_ERROR) {
+			// 에러 처리: 필요하면 WSAGetLastError()로 에러 코드 확인
+			return SOCKET_ERROR;
+		}
+		totalSent += n;
+	}
+	return totalSent;
+}
 
 
 
@@ -290,10 +302,10 @@ DWORD WINAPI SendData(LPVOID lpParam)
 
 			pServer->CreateBitmapMessage(pServer->GetBitMap(), dwSendSize, tmpMessage);
 
-			printf("Send BitMap Data!\n");
+			//printf("Send BitMap Data!\n");
 
 			//3.2 사용자가 입력한 문자열을 서버에 전송한다.
-			::send(hSocket, pSendBuffer, strlen(pSendBuffer) + 1, 0);
+			sendn(hSocket, pSendBuffer, sizeof(Message));
 		}
 
 		Sleep(100);

@@ -35,6 +35,8 @@ private:
 	//1.3 서버 커넥트
 	bool ConnectServer();
 
+	int recvn(SOCKET sock, char* buffer, int totalBytes);
+
 
 public:
 	HBITMAP m_hBitmap;
@@ -52,8 +54,10 @@ private:
 	int m_port;
 
 	//서버와의 통신 버퍼
-	char m_sendBuffer[102400];
-	char m_recvBuffer[102400];
+	char m_sendBuffer[1024];
+	char m_recvBuffer[1024];
+
+	char m_BitMapBuffer[16000000];
 
 	//메시지 데이터
 	Message message;

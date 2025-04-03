@@ -47,6 +47,7 @@ private:
 	void CloseCommunication();
 
 
+
 	//member
 public:
 	HBITMAP m_hBitmap;
@@ -65,8 +66,8 @@ private:
 	int m_port;
 
 	//클라이언트와의 통신 버퍼
-	char m_sendBuffer[102400];
-	char m_recvBuffer[102400];
+	char m_sendBuffer[1024];
+	char m_recvBuffer[1024];
 
 	//메시지 데이터
 	Message message;
@@ -81,6 +82,7 @@ private:
 
 };
 
+int sendn(SOCKET sock, const char* buffer, int totalBytes);
 
 DWORD WINAPI SendData(LPVOID lpParam);
 

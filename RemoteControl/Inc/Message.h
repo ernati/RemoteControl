@@ -8,7 +8,7 @@
 struct Message {
     BITMAPINFOHEADER bmiHeader; // 비트맵 정보 헤더 (가로, 세로, 비트수 등) - 40바이트
     DWORD pixelDataSize;             // 픽셀 데이터 크기 (바이트 단위) - 4바이트
-    char* pixelData;// 그 뒤에 픽셀 데이터가 이어집니다. - 나머지
+    char pixelData[15000000];// 그 뒤에 픽셀 데이터가 이어집니다. - 나머지
 };
 #pragma pack(pop)
 

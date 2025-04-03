@@ -77,9 +77,7 @@ int CMultiThreadClient::Communication()
 	int recvByte = 0;
 	while (true)
 	{
-		GetMutex();
-		
-		recvByte = recv(m_CommunicationSocket, m_recvBuffer, sizeof(m_recvBuffer), 0);
+		recvByte = recvn(m_CommunicationSocket, m_recvBuffer, sizeof(Message), );
 		if (recvByte == SOCKET_ERROR)
 		{
 			printf("recv() failed\n");
@@ -91,18 +89,38 @@ int CMultiThreadClient::Communication()
 			break;
 		}
 
-		//ReleaseMutex
-		// mutex 해제
-		ReleaseMutex_Custom();
-
 		printf("Recv BitMap Data!\n");
+
+		GetMutex();
 
 		//받은 데이터 처리
 		m_hBitmap = ReconstructBitmapFromMessage(m_recvBuffer, recvByte);
+		if (m_hBitmap == NULL) {
+			printf("m_hBitmap 이NULL입니다!\n");
+		}
+
+		//ReleaseMutex
+		// mutex 해제
+		ReleaseMutex_Custom();
 	}
 
 	return 0;
 }
+
+int CMultiThreadClient::recvn(SOCKET sock, char* buffer, int totalBytes) {
+	int totalReceived = 0;
+	while (totalReceived < totalBytes) {
+		int n = recv(sock, buffer + totalReceived, totalBytes - totalReceived, 0);
+		if (n <= 0) {
+			// n == 0 : 연결 종료, n < 0 : 에러
+			return n;
+		}
+		totalReceived += n;
+		printf("totalReceived : %d\n", totalReceived);
+	}
+	return totalReceived;
+}
+
 
 
 /*
@@ -148,13 +166,18 @@ bool CMultiThreadClient::ConnectServer()
 
 HBITMAP CMultiThreadClient::ReconstructBitmapFromMessage(const char* pMessageBuffer, DWORD messageSize)
 {
-	if (!pMessageBuffer || messageSize < sizeof(Message))
-		return NULL;
+	if (!pMessageBuffer || messageSize < sizeof(Message)) {
+		printf("Size of Message : %d\n", sizeof(Message)); // 52
+		printf("messageSize : %d\n", messageSize); //36 혹은 38 
+		return NULL; 
+	}
 
 	// Message 구조체를 읽어들임
 	const Message* pMsg = reinterpret_cast<const Message*>(pMessageBuffer);
-	if (messageSize < sizeof(Message) )
+	if (messageSize < sizeof(Message)) {
+		printf("Error 2!\n");
 		return NULL;
+	}
 
 	// BITMAPINFO 구조체 생성 (비트맵 헤더만 필요)
 	BITMAPINFO bmi;
@@ -167,8 +190,14 @@ HBITMAP CMultiThreadClient::ReconstructBitmapFromMessage(const char* pMessageBuf
 	HBITMAP hNewBitmap = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &pBits, NULL, 0);
 	ReleaseDC(NULL, hdcScreen);
 
-	if (!hNewBitmap || !pBits)
+	if (!hNewBitmap) {
+		printf("hNewBitmap NULL!\n");
 		return NULL;
+	}
+	if (!pBits) {
+		printf("pBits NULL!\n");
+		return NULL;
+	}
 
 	// Message 버퍼에서 픽셀 데이터를 복사
 	memcpy(pBits, pMessageBuffer + SIZE_OF_BITMAPINFOHEADER + SIZE_OF_DWORD, pMsg->pixelDataSize);
