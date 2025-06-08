@@ -1,8 +1,6 @@
 #pragma once
 #include <Message.h>
-#include <WinSock2.h>
 #include <cstdio>
-#pragma comment(lib, "ws2_32")
 
 class CMultiThreadClient
 {
@@ -76,4 +74,6 @@ DWORD WINAPI SendData(LPVOID lpParam);
 
 void GetMutex();
 void ReleaseMutex();
+
+HBITMAP ReceiveBitmapMessage(SOCKET sock);
 

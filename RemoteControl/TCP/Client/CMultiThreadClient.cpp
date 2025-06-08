@@ -1,6 +1,7 @@
 #pragma once
 
 #include <CMultiThreadClient.h>
+#include <vector>
 
 CMultiThreadClient::CMultiThreadClient()
 {
@@ -62,63 +63,38 @@ int CMultiThreadClient::StartClient(int port)
 
 int CMultiThreadClient::Communication()
 {
-	////서버로의 데이터 전송을 맡을 스레드 생성
-	//m_hSendThread = ::CreateThread(
-	//	NULL,
-	//	0,
-	//	SendData,
-	//	(LPVOID)this,
-	//	0,
-	//	&dwSendThreadID
-	//);
-
-	// 서버로부터의 데이터 수신
 	printf("[Client] RecvData Start!\n");
-	int recvByte = 0;
+
 	while (true)
 	{
-		recvByte = recvn(m_CommunicationSocket, m_recvBuffer, sizeof(Message), );
-		if (recvByte == SOCKET_ERROR)
-		{
-			printf("recv() failed\n");
-			break;
-		}
-		else if (recvByte == 0)
-		{
-			printf("서버와의 연결이 끊어졌습니다.\n");
+		// 1) ReceiveBitmapMessage 내부에서 헤더+페이로드 수신→HBITMAP 복원
+		HBITMAP hBmp = ReceiveBitmapMessage(m_CommunicationSocket);
+		if (!hBmp) {
 			break;
 		}
 
-		printf("Recv BitMap Data!\n");
-
+		//// 동기화
 		GetMutex();
 
-		//받은 데이터 처리
-		m_hBitmap = ReconstructBitmapFromMessage(m_recvBuffer, recvByte);
-		if (m_hBitmap == NULL) {
-			printf("m_hBitmap 이NULL입니다!\n");
-		}
+		// 복원된 HBITMAP을 공유 변수에 저장
+		m_hBitmap = hBmp;
 
-		//ReleaseMutex
-		// mutex 해제
 		ReleaseMutex_Custom();
 	}
 
 	return 0;
 }
 
-int CMultiThreadClient::recvn(SOCKET sock, char* buffer, int totalBytes) {
-	int totalReceived = 0;
-	while (totalReceived < totalBytes) {
-		int n = recv(sock, buffer + totalReceived, totalBytes - totalReceived, 0);
-		if (n <= 0) {
-			// n == 0 : 연결 종료, n < 0 : 에러
-			return n;
-		}
-		totalReceived += n;
-		printf("totalReceived : %d\n", totalReceived);
+// sock로부터 정확히 len 바이트를 받을 때까지 반복 호출
+bool recvn(SOCKET sock, void* buf, size_t len) {
+	uint8_t* ptr = reinterpret_cast<uint8_t*>(buf);
+	size_t   received = 0;
+	while (received < len) {
+		int r = recv(sock, reinterpret_cast<char*>(ptr + received), int(len - received), 0);
+		if (r <= 0) return false;  // 에러 혹은 연결 종료
+		received += r;
 	}
-	return totalReceived;
+	return true;
 }
 
 
@@ -164,45 +140,84 @@ bool CMultiThreadClient::ConnectServer()
 }
 
 
-HBITMAP CMultiThreadClient::ReconstructBitmapFromMessage(const char* pMessageBuffer, DWORD messageSize)
-{
-	if (!pMessageBuffer || messageSize < sizeof(Message)) {
-		printf("Size of Message : %d\n", sizeof(Message)); // 52
-		printf("messageSize : %d\n", messageSize); //36 혹은 38 
-		return NULL; 
-	}
-
-	// Message 구조체를 읽어들임
-	const Message* pMsg = reinterpret_cast<const Message*>(pMessageBuffer);
-	if (messageSize < sizeof(Message)) {
-		printf("Error 2!\n");
+HBITMAP ReceiveBitmapMessage(SOCKET sock) {
+	// 1) 헤더만큼 먼저 받기 (payload[1] 제외)
+	const size_t headerSize = sizeof(Message) - sizeof(uint8_t);
+	std::vector<uint8_t> headerBuf(headerSize);
+	if (!recvn(sock, headerBuf.data(), headerSize)) {
 		return NULL;
 	}
 
-	// BITMAPINFO 구조체 생성 (비트맵 헤더만 필요)
+	// 2) payloadSize 파싱
+	Message* hdr = reinterpret_cast<Message*>(headerBuf.data());
+	if (ntohl(hdr->magic) != 0x424D4350) {
+		return NULL;
+	}
+	uint64_t payloadSize = ntohll(hdr->payloadSize);
+
+	// 3) 헤더 + 페이로드 전체 버퍼 할당 & 헤더 복사
+	size_t totalSize = headerSize + payloadSize;
+	uint8_t* fullBuf = new uint8_t[totalSize];
+	memcpy(fullBuf, headerBuf.data(), headerSize);
+
+	// 4) 나머지 페이로드 수신
+	if (!recvn(sock, fullBuf + headerSize, payloadSize)) {
+		delete[] fullBuf;
+		return NULL;
+	}
+
+	// 5) 체크섬 검증
+	// recv된 checksum 추출
+	uint32_t recvCrc;
+	std::memcpy(&recvCrc, fullBuf + offsetof(Message, checksum), sizeof(uint32_t));
+	recvCrc = ntohl(recvCrc);
+
+	// checksum 필드 0으로 클리어
+	std::memset(fullBuf + offsetof(Message, checksum), 0, sizeof(uint32_t));
+
+	// 계산 대상: magic 직후부터 끝까지
+	uint8_t* csStart = fullBuf + sizeof(uint32_t);
+	size_t   csLen = totalSize - sizeof(uint32_t);
+	uint32_t calcCrc = calculateCRC32(csStart, csLen);
+
+	if (recvCrc != calcCrc) {
+		delete[] fullBuf;
+		return NULL;
+	}
+
+	// 6) 헤더 정보 꺼내기
+	Message* msg = reinterpret_cast<Message*>(fullBuf);
+	uint32_t width = ntohl(msg->width);
+	uint32_t height = ntohl(msg->height);
+	uint16_t bitCount = ntohs(msg->bitCount);
+	uint32_t scanLine = ntohl(msg->widthBytes);
+	uint8_t* pixels = msg->payload;
+
+	// 7) DIBSection으로 HBITMAP 생성
 	BITMAPINFO bmi;
-	ZeroMemory(&bmi, sizeof(BITMAPINFO));
-	bmi.bmiHeader = pMsg->bmiHeader;
+	ZeroMemory(&bmi, sizeof(bmi));
+	BITMAPINFOHEADER& bih = bmi.bmiHeader;
+	bih.biSize = sizeof(bih);
+	bih.biWidth = width;
+	bih.biHeight = -static_cast<LONG>(height); // top-down
+	bih.biPlanes = 1;
+	bih.biBitCount = bitCount;
+	bih.biCompression = BI_RGB;
 
-	// CreateDIBSection을 사용해 새 비트맵 생성
-	HDC hdcScreen = GetDC(NULL);
-	void* pBits = nullptr;
-	HBITMAP hNewBitmap = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &pBits, NULL, 0);
-	ReleaseDC(NULL, hdcScreen);
+	void* dibBits = nullptr;
+	HDC    hdc = GetDC(NULL);
+	HBITMAP hBmp = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, &dibBits, NULL, 0);
+	ReleaseDC(NULL, hdc);
 
-	if (!hNewBitmap) {
-		printf("hNewBitmap NULL!\n");
-		return NULL;
+	if (hBmp && dibBits) {
+		// 픽셀 데이터 복사
+		std::memcpy(dibBits, pixels, payloadSize);
 	}
-	if (!pBits) {
-		printf("pBits NULL!\n");
-		return NULL;
+	else {
 	}
 
-	// Message 버퍼에서 픽셀 데이터를 복사
-	memcpy(pBits, pMessageBuffer + SIZE_OF_BITMAPINFOHEADER + SIZE_OF_DWORD, pMsg->pixelDataSize);
-
-	return hNewBitmap;
+	delete[] fullBuf;
+	return hBmp;
 }
 
 

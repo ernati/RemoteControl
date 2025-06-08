@@ -39,6 +39,95 @@ DWORD WINAPI ThreadFunction(LPVOID lpParam)
 
             //2.2 ThreadClient 내 BITMAP 변수로 값 이동
             server->m_hBitmap = pCaptureScreen->GetnewBitmap();
+
+            //// 2.3 BITMAP 정보 출력
+            //if (server->m_hBitmap) {
+            //    BITMAP bmpInfo;
+            //    if (GetObject(server->m_hBitmap, sizeof(BITMAP), &bmpInfo)) {
+            //        std::cout << "=== Captured BITMAP Info ===\n";
+            //        std::cout << "Width       : " << bmpInfo.bmWidth << "\n";
+            //        std::cout << "Height      : " << bmpInfo.bmHeight << "\n";
+            //        std::cout << "Planes      : " << bmpInfo.bmPlanes << "\n";
+            //        std::cout << "BitCount    : " << bmpInfo.bmBitsPixel << "\n";
+            //        std::cout << "WidthBytes  : " << bmpInfo.bmWidthBytes << "\n";
+            //        std::cout << "NumberOfBits: " << bmpInfo.bmHeight * bmpInfo.bmWidthBytes * 8 << "\n";
+            //        std::cout << "Reserved    : " << bmpInfo.bmBits << "\n";
+            //        std::cout << "============================\n";
+            //    }
+            //    else {
+            //        std::cerr << "GetObject failed: " << GetLastError() << std::endl;
+            //    }
+            //}
+            //// 예상 출력
+            //== = Captured BITMAP Info == =
+            //    Width       : 2560
+            //    Height : 1440
+            //    Planes : 1
+            //    BitCount : 32
+            //    WidthBytes : 10240
+            //    NumberOfBits : 117964800
+            //    Reserved : 0000000000000000
+            //============================
+
+            ////2.4 Message 구조체 생성
+            //// === 여기에 TEST 코드 삽입 ===
+            //if (server->m_hBitmap) {
+            //    // 1) 원본 BITMAP 정보 얻기
+            //    BITMAP origBmp;
+            //    if (!GetObject(server->m_hBitmap, sizeof(origBmp), &origBmp)) {
+            //        std::cerr << "GetObject 실패: " << GetLastError() << "\n";
+            //        continue;
+            //    }
+            //    size_t bitsSize = static_cast<size_t>(origBmp.bmHeight) * origBmp.bmWidthBytes;
+            //    uint8_t* bits = new uint8_t[bitsSize];
+            //    if (GetBitmapBits(server->m_hBitmap, static_cast<LONG>(bitsSize), bits) == 0) {
+            //        std::cerr << "GetBitmapBits 실패\n";
+            //        delete[] bits;
+            //        continue;
+            //    }
+
+            //    // 2) Message 버퍼 생성
+            //    size_t msgSize = 0;
+            //    uint8_t* msgBuf = createMessageBuffer_tmp(origBmp, bits, bitsSize, msgSize);
+            //    Message* msg = reinterpret_cast<Message*>(msgBuf);
+
+            //    // 3) 체크섬 검증
+            //    // 네트워크 바이트 오더 → 호스트 바이트 오더
+            //    uint32_t recvCrc = ntohl(msg->checksum);
+            //    // 계산을 위해 원본 checksum 필드를 0으로 세팅
+            //    std::memset(msgBuf + offsetof(Message, checksum), 0, sizeof(msg->checksum));
+            //    const uint8_t* csStart = msgBuf + sizeof(msg->magic);
+            //    size_t        csLen = msgSize - sizeof(msg->magic);
+            //    uint32_t      calcCrc = calculateCRC32(csStart, csLen);
+
+            //    if (recvCrc != calcCrc) {
+            //        std::cerr << "체크섬 불일치! 수신: " << recvCrc
+            //            << " 계산: " << calcCrc << "\n";
+            //    }
+            //    else {
+            //        std::cout << "체크섬 정상\n";
+
+            //        // 4) Message 헤더 vs 원본 BITMAP 비교
+            //        bool match = true;
+            //        if (ntohl(msg->width) != static_cast<uint32_t>(origBmp.bmWidth))    match = false;
+            //        if (ntohl(msg->height) != static_cast<uint32_t>(origBmp.bmHeight))   match = false;
+            //        if (ntohs(msg->planes) != origBmp.bmPlanes)                         match = false;
+            //        if (ntohs(msg->bitCount) != origBmp.bmBitsPixel)                     match = false;
+            //        if (ntohl(msg->widthBytes) != origBmp.bmWidthBytes)                  match = false;
+            //        if (ntohll(msg->payloadSize) != bitsSize)                            match = false;
+
+            //        if (match) {
+            //            std::cout << "Message 헤더와 원본 BITMAP 정보 일치\n";
+            //        }
+            //        else {
+            //            std::cerr << "Message 헤더와 BITMAP 정보 불일치\n";
+            //        }
+            //    }
+
+            //    // 5) 메모리 해제
+            //    delete[] bits;
+            //    delete[] msgBuf;
+            //}
         }
 
         Sleep(100);

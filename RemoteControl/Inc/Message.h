@@ -1,17 +1,40 @@
-#pragma once
+ï»¿#pragma once
 
 #include <WinSock2.h>
 #pragma comment(lib, "ws2_32")
+#include <cstdint>
 
-// Message ±¸Á¶Ã¼: BITMAPINFOHEADER¿Í ÇÈ¼¿ µ¥ÀÌÅÍ Å©±â¸¦ ÀúÀåÇÏ°í, ±× µÚ¿¡ ÇÈ¼¿ µ¥ÀÌÅÍ°¡ ¿¬¼ÓµÊ
 #pragma pack(push, 1)
 struct Message {
-    BITMAPINFOHEADER bmiHeader; // ºñÆ®¸Ê Á¤º¸ Çì´õ (°¡·Î, ¼¼·Î, ºñÆ®¼ö µî) - 40¹ÙÀÌÆ®
-    DWORD pixelDataSize;             // ÇÈ¼¿ µ¥ÀÌÅÍ Å©±â (¹ÙÀÌÆ® ´ÜÀ§) - 4¹ÙÀÌÆ®
-    char pixelData[15000000];// ±× µÚ¿¡ ÇÈ¼¿ µ¥ÀÌÅÍ°¡ ÀÌ¾îÁı´Ï´Ù. - ³ª¸ÓÁö
+    uint32_t magic;         // ë©”ì‹œì§€ ì‹ë³„ìš© ë§¤ì§ ë„˜ë²„ (ì˜ˆ: 0x424D4350 = "BMCP")
+    uint32_t checksum;      // í—¤ë”ì™€ í˜ì´ë¡œë“œì— ëŒ€í•œ CRC32 ë“± ì²´í¬ì„¬
+    uint32_t width;         // BITMAP.bmWidth
+    uint32_t height;        // BITMAP.bmHeight
+    uint16_t planes;        // BITMAP.bmPlanes
+    uint16_t bitCount;      // BITMAP.bmBitsPixel
+    uint32_t widthBytes;    // BITMAP.bmWidthBytes
+    uint64_t payloadSize;   // ë’¤ë”°ë¥´ëŠ” í”½ì…€ ë°ì´í„° í¬ê¸° (ë°”ì´íŠ¸ ë‹¨ìœ„)
+
+    // flexible array member â€” ì‹¤ì œ ë¹„íŠ¸ë§µ ë¹„íŠ¸ ë°ì´í„°ëŠ” ì´ ë’¤ì— ë¶™ì—¬ ë³´ëƒ„
+    uint8_t  payload[1];
 };
 #pragma pack(pop)
 
-#define SIZE_OF_BITMAPINFOHEADER 40
-#define SIZE_OF_DWORD 4
+// checksum ê³„ì‚° í•¨ìˆ˜ - crc
+uint32_t calculateCRC32(const uint8_t* data, size_t length);
+
+/**
+ * @brief  Message ë²„í¼ë¥¼ new[]ë¡œ í• ë‹¹í•˜ì—¬ ë°˜í™˜
+ * @param  bmp       GetObjectë¡œ ì–»ì€ BITMAP êµ¬ì¡°ì²´
+ * @param  bits      ë¹„íŠ¸ë§µ í”½ì…€ ë°ì´í„° í¬ì¸í„°
+ * @param  bitsSize  í”½ì…€ ë°ì´í„° í¬ê¸°(bytes)
+ * @param  outTotal  ìƒì„±ëœ ì „ì²´ ë²„í¼ í¬ê¸°(bytes) ë°˜í™˜
+ * @return newë¡œ í• ë‹¹ëœ Message ë²„í¼ (ì‚¬ìš© í›„ delete[])
+ */
+uint8_t* createMessageBuffer_tmp(
+    const BITMAP& bmp,
+    const uint8_t* bits,
+    size_t bitsSize,
+    size_t& outTotal
+);
 

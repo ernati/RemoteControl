@@ -187,81 +187,6 @@ bool CMultiThreadServer::ListenSocket()
 }
 
 
-char* CMultiThreadServer::CreateBitmapMessage(HBITMAP hBitmap, DWORD& outMessageSize, Message& message)
-{
-	if (!hBitmap)
-		return nullptr;
-
-	// 캡쳐된 비트맵의 기본 정보를 얻습니다.
-	BITMAP bm = { 0 };
-	if (GetObject(hBitmap, sizeof(bm), &bm) == 0)
-		return nullptr;
-
-	// BITMAPINFOHEADER를 설정합니다.
-	BITMAPINFOHEADER bih = { 0 };
-	bih.biSize = sizeof(BITMAPINFOHEADER);
-	bih.biWidth = bm.bmWidth;
-	bih.biHeight = bm.bmHeight;  // 하단에서 위쪽 순서가 아니라면 필요에 따라 음수 설정
-	bih.biPlanes = 1;
-	bih.biBitCount = bm.bmBitsPixel;  // 예: 24 또는 32
-	bih.biCompression = BI_RGB;
-	bih.biSizeImage = 0;  // BI_RGB인 경우 0이 될 수 있으므로 아래에서 계산
-
-	// 먼저, GetDIBits를 호출하여 필요한 이미지 데이터 크기를 얻음
-	HDC hdcScreen = GetDC(NULL);
-	if (0 == GetDIBits(hdcScreen, hBitmap, 0, bm.bmHeight, NULL, reinterpret_cast<BITMAPINFO*>(&bih), DIB_RGB_COLORS))
-	{
-		ReleaseDC(NULL, hdcScreen);
-		return nullptr;
-	}
-	ReleaseDC(NULL, hdcScreen);
-
-	// biSizeImage가 0이면 직접 계산 (각 스캔라인은 4바이트 경계에 맞춰져 있음)
-	DWORD bytesPerLine = ((bm.bmWidth * bih.biBitCount + 31) / 32) * 4;
-	if (bih.biSizeImage == 0)
-		bih.biSizeImage = bytesPerLine * bm.bmHeight;
-
-	DWORD dataSize = bih.biSizeImage;
-
-	// 픽셀 데이터를 담을 버퍼를 할당
-	/*message.pixelData = new char[dataSize];
-	if (!message.pixelData) {
-		return nullptr;
-	}*/
-
-	hdcScreen = GetDC(NULL);
-	if (0 == GetDIBits(hdcScreen, hBitmap, 0, bm.bmHeight, message.pixelData, reinterpret_cast<BITMAPINFO*>(&bih), DIB_RGB_COLORS))
-	{
-		//delete[] message.pixelData;
-		ReleaseDC(NULL, hdcScreen);
-		return nullptr;
-	}
-	ReleaseDC(NULL, hdcScreen);
-
-	// Message 버퍼 전체 크기: Message 구조체 크기
-	outMessageSize = sizeof(Message);
-
-	// Message 구조체를 채움
-	ZeroMemory(m_sendBuffer, sizeof(m_sendBuffer));
-	message.bmiHeader = bih;
-	message.pixelDataSize = dataSize;
-
-	// 픽셀 데이터를 Message 구조체 뒤에 복사
-	memcpy(m_sendBuffer, &message, sizeof(Message));
-
-	//delete[] message.pixelData;
-	return m_sendBuffer;
-}
-
-
-
-
-
-
-
-
-
-
 int sendn(SOCKET sock, const char* buffer, int totalBytes) {
 	int totalSent = 0;
 	while (totalSent < totalBytes) {
@@ -290,27 +215,34 @@ DWORD WINAPI SendData(LPVOID lpParam)
 	
 	while (1)
 	{
-		////3.1 사용자로부터 문자열을 입력받는다.
-		//printf("보낼 데이터: ");
-		//scanf_s("%s", pSendBuffer);
-		//if (strcmp(pSendBuffer, "EXIT") == 0)	break;
-
-		Message tmpMessage = { 0, };
-
-		//Bitmap 데이터가 NULL이 아닐경우, 전송할 데이터를 버퍼에 담는다.
+		//1. Bitmap 데이터가 NULL이 아닐경우, 데이터를 전송한다.
 		if (pServer->GetBitMap() != NULL) {
+			//1.1 멤버에 담긴 BITMAP 데이터를 획득
+			BITMAP BmpCaptured;
+			if (!GetObject(pServer->GetBitMap(), sizeof(BmpCaptured), &BmpCaptured)) {
+			    continue;
+			}
+			size_t bitsSize = static_cast<size_t>(BmpCaptured.bmHeight) * BmpCaptured.bmWidthBytes;
+			uint8_t* bits = new uint8_t[bitsSize];
+			if (GetBitmapBits(pServer->GetBitMap(), static_cast<LONG>(bitsSize), bits) == 0) {
+			    delete[] bits;
+			    continue;
+			}
+			
+			//1.2 BITMAP의 메타 데이터가 담긴 Message 버퍼 생성
+			size_t msgSize = 0;
+			uint8_t* msgBuf = createMessageBuffer_tmp(BmpCaptured, bits, bitsSize, msgSize);
+			Message* msg = reinterpret_cast<Message*>(msgBuf);
 
-			pServer->CreateBitmapMessage(pServer->GetBitMap(), dwSendSize, tmpMessage);
+			//1.3 사용자가 입력한 문자열을 서버에 전송한다.
+			sendn(hSocket, (const char*)msgBuf, msgSize);
 
-			//printf("Send BitMap Data!\n");
-
-			//3.2 사용자가 입력한 문자열을 서버에 전송한다.
-			sendn(hSocket, pSendBuffer, sizeof(Message));
+			//1.4 메모리 해제
+			delete[] bits;
+			delete[] msgBuf;
 		}
 
 		Sleep(100);
-
-		
 	}
 
 	return 0;
