@@ -1,39 +1,38 @@
 #pragma once
 
-#include <CMultiThreadClient.h>
+#include "CRemoteControlRecvMode.h"
 #include <vector>
+#include <cstdio>
+#include <cstring>
 
-CMultiThreadClient::CMultiThreadClient()
+CRemoteControlRecvMode::CRemoteControlRecvMode()
 {
-	ZeroMemory(&m_wsa, sizeof(m_wsa));
-
-	m_CommunicationSocket = INVALID_SOCKET;
 	ZeroMemory(&m_Serveraddr, sizeof(m_Serveraddr));
 	ZeroMemory(&message, sizeof(message));
-	m_port = 0;
-
-	m_hBitmap = NULL;
-
-	hMutex = CreateMutex(NULL, FALSE, L"Global\\MyGlobalMutex");
-	if (hMutex == NULL) {
-		printf("CreateMutex 실패, 오류 코드 : %d\n", GetLastError());
-		return;
-	}
-	printf("전역 mutex가 생성되었습니다.\n");
 }
 
-CMultiThreadClient::~CMultiThreadClient()
+CRemoteControlRecvMode::CRemoteControlRecvMode(uint32_t myId, uint32_t targetId)
+	: m_CommunicationSocket(INVALID_SOCKET)
+	, m_port(0)
+	, m_myId(myId)
+	, m_targetId(targetId)
+	, m_hBitmap(NULL)
+{
+	ZeroMemory(&m_Serveraddr, sizeof(m_Serveraddr));
+	ZeroMemory(&message, sizeof(message));
+}
+
+CRemoteControlRecvMode::~CRemoteControlRecvMode()
 {
 	if (m_CommunicationSocket != INVALID_SOCKET)
 		closesocket(m_CommunicationSocket);
-
 	WSACleanup();
 }
 
 /*
 * public method
 */
-int CMultiThreadClient::StartClient(int port)
+int CRemoteControlRecvMode::StartClient(int port)
 {
 	m_port = port;
 
@@ -55,13 +54,14 @@ int CMultiThreadClient::StartClient(int port)
 		return -3;
 	}
 
-	//통신
-	Communication();
-
-	return 0;
+	if (!PerformHandshake()) {
+		printf("Handshake with server failed\n");
+		return -4;
+	}
+	return Communication();
 }
 
-int CMultiThreadClient::Communication()
+int CRemoteControlRecvMode::Communication()
 {
 	printf("[Client] RecvData Start!\n");
 
@@ -73,13 +73,9 @@ int CMultiThreadClient::Communication()
 			break;
 		}
 
-		//// 동기화
-		GetMutex();
-
 		// 복원된 HBITMAP을 공유 변수에 저장
 		m_hBitmap = hBmp;
 
-		ReleaseMutex_Custom();
 	}
 
 	return 0;
@@ -102,7 +98,7 @@ bool recvn(SOCKET sock, void* buf, size_t len) {
 /*
 * private method
 */
-bool CMultiThreadClient::InitWinsock()
+bool CRemoteControlRecvMode::InitWinsock()
 {
 	if (WSAStartup(MAKEWORD(2, 2), &m_wsa) != 0)
 	{
@@ -113,7 +109,7 @@ bool CMultiThreadClient::InitWinsock()
 	return true;
 }
 
-bool CMultiThreadClient::CreateCommunicationSocket()
+bool CRemoteControlRecvMode::CreateCommunicationSocket()
 {
 	m_CommunicationSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (m_CommunicationSocket == INVALID_SOCKET)
@@ -125,7 +121,7 @@ bool CMultiThreadClient::CreateCommunicationSocket()
 	return true;
 }
 
-bool CMultiThreadClient::ConnectServer()
+bool CRemoteControlRecvMode::ConnectServer()
 {
 	m_Serveraddr.sin_family = AF_INET;
 	m_Serveraddr.sin_port = htons(m_port);
@@ -136,6 +132,32 @@ bool CMultiThreadClient::ConnectServer()
 		printf("connect() failed\n");
 		return false;
 	}
+	return true;
+}
+
+bool CRemoteControlRecvMode::PerformHandshake()
+{
+	ConnRequestHeader req{};
+	req.mode = 'r';
+	req.myId = htonl(m_myId);
+	req.target = htonl(m_targetId);
+
+	if (send(m_CommunicationSocket, (char*)&req, sizeof(req), 0) != sizeof(req)) {
+		printf("Failed to send handshake request\n");
+		return false;
+	}
+
+	ConnResponse resp{};
+	if (!recvn(m_CommunicationSocket, (void*) & resp, sizeof(resp))) {
+		printf("Failed to receive handshake response\n");
+		return false;
+	}
+
+	if (resp.success != 1) {
+		printf("Server error: %s\n", resp.info);
+		return false;
+	}
+	printf("Handshake success: %s\n", resp.info);
 	return true;
 }
 
@@ -224,7 +246,7 @@ HBITMAP ReceiveBitmapMessage(SOCKET sock) {
 
 DWORD WINAPI SendData(LPVOID lpParam)
 {
-	CMultiThreadClient* pClient = (CMultiThreadClient*)lpParam;
+	CRemoteControlRecvMode* pClient = (CRemoteControlRecvMode*)lpParam;
 	SOCKET hSocket = pClient->GetCommunicationSocket();
 	char* sendBuffer = pClient->GetSendBuffer();
 
@@ -247,33 +269,4 @@ DWORD WINAPI SendData(LPVOID lpParam)
 }
 
 
-
-void CMultiThreadClient::GetMutex()
-{
-	DWORD dwWaitResult = WaitForSingleObject(hMutex, INFINITE);
-	switch (dwWaitResult) {
-	case WAIT_OBJECT_0:
-		printf("mutex 소유권 획득 성공. 임계 구역에 진입합니다.\n");
-		// 여기서 임계 구역 내 작업 수행
-		// 예제: 2초 동안 대기 (임계 구역 내 작업을 시뮬레이션)
-		Sleep(2000);
-		break;
-	case WAIT_ABANDONED:
-		printf("mutex가 포기되었습니다.\n");
-		break;
-	default:
-		printf("WaitForSingleObject 실패, 오류 코드: %d\n", GetLastError());
-		break;
-	}
-}
-
-void CMultiThreadClient::ReleaseMutex_Custom()
-{
-	if (!ReleaseMutex(hMutex)) {
-		printf("ReleaseMutex 실패, 오류 코드: %d\n", GetLastError());
-	}
-	else {
-		printf("mutex가 해제되었습니다.\n");
-	}
-}
 

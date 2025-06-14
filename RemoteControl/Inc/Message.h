@@ -38,3 +38,17 @@ uint8_t* createMessageBuffer_tmp(
     size_t& outTotal
 );
 
+
+
+// ——— 메시지 구조체(네트워크 바이트 순서) ———
+#pragma pack(push,1)
+struct ConnRequestHeader {
+    char     mode;       // 's' = send, 'r' = recv
+    uint32_t myId;       // host-byte-order ID
+    uint32_t target;     // host-byte-order targetId (only for 'r')
+};
+struct ConnResponse {
+    uint8_t  success;    // 0 = fail, 1 = ok
+    char     info[60];   // null-terminated 메시지
+};
+#pragma pack(pop)

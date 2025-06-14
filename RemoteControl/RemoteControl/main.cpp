@@ -1,11 +1,20 @@
 #pragma once
 #include <CCaptureScreenAndSendBitMap.h>
 #include <CPrintScreen.h>
-#include <CMultiThreadClient.h>
+#include <CRemoteControlRecvMode.h>
 
-CMultiThreadClient* client = nullptr;
+#include <CRemoteControlSendMode.h>
+
+#include <iostream>
+#include <string>
+#include <cstdlib>
+
+CRemoteControlRecvMode* RecvMode = nullptr;
 CCaptureScreenAndSendBitMap* pCaptureScreen = nullptr;
 CPrintScreen* g_printScreen = nullptr;
+CRemoteControlSendMode* server = nullptr;
+
+
 
 // 윈도우 프로시저: 창의 메시지를 처리합니다. - 창 생성, 타이머 설정, 화면 캡쳐 및 업데이트
     // DispatchMessage 함수에서 호출됨.
@@ -22,8 +31,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     case WM_TIMER:
         // 1. 설정된 시간마다 화면출력
 
-        if (client->m_hBitmap != NULL) {
-            printf("화면을 출력합니다!\n");
+        if (RecvMode->m_hBitmap != NULL) {
+            //printf("화면을 출력합니다!\n");
             InvalidateRect(hwnd, NULL, TRUE);
         }
         return 0;
@@ -41,9 +50,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         int winWidth = rect.right - rect.left;
         int winHeight = rect.bottom - rect.top;
 
-        if (client->m_hBitmap != NULL) {
+        if (RecvMode->m_hBitmap != NULL) {
 
-            client->GetMutex();
+            //RecvMode->GetMutex();
 
             // 3. 획득한 기존 DC와 동일한 속성을 가지는 DC를 메모리에 생성하고, 그 핸들을 획득. - 이미지 처리는 메모리 DC에서 수행.
             // SelectObject - DC가 특정 GDI 객체( 여기서는 비트맵 )을 선택하도록 하여, 이후 그리기 작업이 해당 객체의 속성을 사용하도록 함.
@@ -52,14 +61,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 printf("CreateCompatibleDC Fail!\n");
             }
 
-            HBITMAP hOldBmp = (HBITMAP)SelectObject(hMemDC, client->m_hBitmap); // hOldBmp - 이전에 DC에 선택되어 있던 비트맵 객체의 핸들을 저장
+            HBITMAP hOldBmp = (HBITMAP)SelectObject(hMemDC, RecvMode->m_hBitmap); // hOldBmp - 이전에 DC에 선택되어 있던 비트맵 객체의 핸들을 저장
             if (hOldBmp == NULL) {
                 printf("SelectObject Fail!\n");
             }
 
             // 4. GetObject - 비트맵 정보를 버퍼( BITMAP 구조체 )에 저장
             BITMAP bm;
-            GetObject(client->m_hBitmap, sizeof(BITMAP), &bm);
+            GetObject(RecvMode->m_hBitmap, sizeof(BITMAP), &bm);
 
             // 5. Src DC( Memory DC )로부터 픽셀 데이터( 전역 변수에 저장된 캡쳐된 화면 )을 Dest DC( 전체 화면에 대한 Device Context )에 복사함 ( SRCCOPY - 단순 복사 )
             // 대상 사각형의 크기에 맞게 확대 또는 축소하여 복사
@@ -70,7 +79,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             DeleteDC(hMemDC);
 
             //ReleaseMutex
-            client->ReleaseMutex_Custom();
+            //RecvMode->ReleaseMutex_Custom();
         }
 
         //7. EndPaint - BeginPaint 함수로부터 반환된 DC 핸들을 해제
@@ -86,7 +95,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
-DWORD WINAPI ThreadFunction(LPVOID lpParam)
+DWORD WINAPI ThreadFunctionRecv(LPVOID lpParam)
 {
     // 콘솔 할당 및 표준 출력 재지정
     AllocConsole();
@@ -159,27 +168,157 @@ DWORD WINAPI ThreadFunction(LPVOID lpParam)
 }
 
 
-int main() {
-	int nRet = 0;
-	client = new CMultiThreadClient();
+//Capture를 위한 ThreadFunction
+DWORD WINAPI ThreadFunctionSend(LPVOID lpParam)
+{
+    // lpParam을 사용하여 전달된 데이터를 처리할 수 있습니다.
 
-    // 캡처를 위한 Thread 생성
-    HANDLE hThread = CreateThread(
-        NULL,          // 기본 보안 속성
-        0,             // 기본 스택 크기
-        ThreadFunction, // 스레드 함수
-        NULL,         // 스레드 함수에 전달할 매개변수
-        0,             // 생성 즉시 실행
-        NULL           // 스레드 ID (필요 시 저장)
-    );
+    HINSTANCE hInstance = GetModuleHandle(NULL);
 
-	nRet = client->StartClient(9000);
-	if (nRet < 0) {
-		printf("client.StartClient() failed, nRet:%d\n", nRet);
-	}
+    pCaptureScreen = new CCaptureScreenAndSendBitMap();
+    g_printScreen = new CPrintScreen(hInstance);
+
+    g_printScreen->setCaptureScreen(pCaptureScreen);
+    g_printScreen->sethInstance(hInstance);
+
+
+    //1. null check
+    if (!g_printScreen->m_hInstance) {
+        std::cerr << "m_captureScreen is nullptr" << std::endl;
+        return false;
+    }
+
+    //2. 일정 시간 마다 화면 캡처
+    // 반복 간격 설정 (예: 100ms)
+    while (true) {
+        //2.1 화면 캡처
+        pCaptureScreen->CaptureScreen();
+        if (pCaptureScreen->CheckSuccessCapture()) {
+            // 2. 이전 캡쳐된 이미지가 있다면 해제
+            pCaptureScreen->UpdateNewBitmap();
+
+            //2.2 ThreadClient 내 BITMAP 변수로 값 이동
+            server->m_hBitmap = pCaptureScreen->GetnewBitmap();
+
+            //// 2.3 BITMAP 정보 출력
+            //if (server->m_hBitmap) {
+            //    BITMAP bmpInfo;
+            //    if (GetObject(server->m_hBitmap, sizeof(BITMAP), &bmpInfo)) {
+            //        std::cout << "=== Captured BITMAP Info ===\n";
+            //        std::cout << "Width       : " << bmpInfo.bmWidth << "\n";
+            //        std::cout << "Height      : " << bmpInfo.bmHeight << "\n";
+            //        std::cout << "Planes      : " << bmpInfo.bmPlanes << "\n";
+            //        std::cout << "BitCount    : " << bmpInfo.bmBitsPixel << "\n";
+            //        std::cout << "WidthBytes  : " << bmpInfo.bmWidthBytes << "\n";
+            //        std::cout << "NumberOfBits: " << bmpInfo.bmHeight * bmpInfo.bmWidthBytes * 8 << "\n";
+            //        std::cout << "Reserved    : " << bmpInfo.bmBits << "\n";
+            //        std::cout << "============================\n";
+            //    }
+            //    else {
+            //        std::cerr << "GetObject failed: " << GetLastError() << std::endl;
+            //    }
+            //}
+            //// 예상 출력
+            //== = Captured BITMAP Info == =
+            //    Width       : 2560
+            //    Height : 1440
+            //    Planes : 1
+            //    BitCount : 32
+            //    WidthBytes : 10240
+            //    NumberOfBits : 117964800
+            //    Reserved : 0000000000000000
+            //============================
+        }
+
+        //Sleep(100);
+    }
+
+    return 0;  // 스레드가 종료될 때 반환할 값
+}
+
+// 사용법 출력
+void PrintHelp(const char* progName) {
+    printf("Usage:\n");
+    printf("  %s recv <myId> <targetId>\n", progName);
+    printf("    <myId>      : this client's ID (recv mode)\n");
+    printf("    <targetId>  : ID of the send-mode client you want to connect to\n");
+    printf("  %s send <myId>\n", progName);
+    printf("    <myId>      : this client's ID (send mode)\n");
+}
+
+
+int main(int argc, char* argv[]) {
+    if (argc < 2) {
+        PrintHelp(argv[0]);
+        return -1;
+    }
+
+    std::string mode(argv[1]);
+    int nRet = 0;
+
+    if (mode == "recv") {
+        // recv 모드는 myId 하나만 필요
+        if (argc < 3) {
+            PrintHelp(argv[0]);
+            return -1;
+        }
+        uint32_t myId = static_cast<uint32_t>(std::stoul(argv[2]));
+
+        RecvMode = new CRemoteControlRecvMode();
+
+        // 캡처를 위한 Thread 생성
+        HANDLE hThread = CreateThread(
+            NULL,          // 기본 보안 속성
+            0,             // 기본 스택 크기
+            ThreadFunctionRecv, // 스레드 함수
+            NULL,         // 스레드 함수에 전달할 매개변수
+            0,             // 생성 즉시 실행
+            NULL           // 스레드 ID (필요 시 저장)
+        );
+
+        nRet = RecvMode->StartClient(25000);
+        if (nRet < 0) {
+            printf("RecvMode.StartClient() failed, nRet:%d\n", nRet);
+        }
+
+    }
+    else if (mode == "send") {
+        // send 모드는 ID, targetId 둘 다 필요
+        if (argc < 4) {
+            PrintHelp(argv[0]);
+            return -1;
+        }
+        uint32_t myId = static_cast<uint32_t>(std::stoul(argv[2]));
+        uint32_t targetId = static_cast<uint32_t>(std::stoul(argv[3]));
+
+
+        server = new CRemoteControlSendMode();
+
+        // Window를 위한 Thread 생성
+        HANDLE hThread = CreateThread(
+            NULL,          // 기본 보안 속성
+            0,             // 기본 스택 크기
+            ThreadFunctionSend, // 스레드 함수
+            NULL,         // 스레드 함수에 전달할 매개변수
+            0,             // 생성 즉시 실행
+            NULL           // 스레드 ID (필요 시 저장)
+        );
+
+        int nRet = 0;
+
+        nRet = server->StartClient(25000);
+        if (nRet < 0) {
+            printf("server.StartServer() failed, nRet:%d\n", nRet);
+        }
+    }
+    else {
+        PrintHelp(argv[0]);
+        return -2;
+    }
 
 	return nRet;
 }
+
 
 
 
@@ -188,9 +327,9 @@ int main() {
 //#pragma once
 //#include <CCaptureScreenAndSendBitMap.h>
 //#include <CPrintScreen.h>
-//#include <CMultiThreadClient.h>
+//#include <CRemoteControlRecvMode.h>
 //
-//CMultiThreadClient* client = nullptr;
+//CRemoteControlRecvMode* client = nullptr;
 //CCaptureScreenAndSendBitMap* pCaptureScreen = nullptr;
 //CPrintScreen* g_printScreen = nullptr;
 //

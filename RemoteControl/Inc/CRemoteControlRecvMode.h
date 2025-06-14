@@ -2,12 +2,13 @@
 #include <Message.h>
 #include <cstdio>
 
-class CMultiThreadClient
+class CRemoteControlRecvMode
 {
 	//method
 public:
-	CMultiThreadClient();
-	virtual ~CMultiThreadClient();
+	CRemoteControlRecvMode();
+	CRemoteControlRecvMode(uint32_t myId, uint32_t targetId);
+	virtual ~CRemoteControlRecvMode();
 
 	//1. 클라이언트 시작 - 소켓 생성, 커넥트
 	int StartClient(int port);
@@ -21,9 +22,6 @@ public:
 
 	HBITMAP ReconstructBitmapFromMessage(const char* pMessageBuffer, DWORD messageSize);
 
-	void GetMutex();
-	void ReleaseMutex_Custom();
-
 private:
 	//1. 클라이언트 시작 - 소켓 생성, 커넥트
 	//1.1 윈속 라이브러리 초기화
@@ -33,13 +31,11 @@ private:
 	//1.3 서버 커넥트
 	bool ConnectServer();
 
-	int recvn(SOCKET sock, char* buffer, int totalBytes);
+	bool PerformHandshake();
 
 
 public:
 	HBITMAP m_hBitmap;
-	HANDLE hMutex;
-
 
 private:
 	//member
@@ -60,17 +56,13 @@ private:
 	//메시지 데이터
 	Message message;
 
-	//서버로의 데이터 전송을 맡을 스레드 핸들
-	HANDLE m_hSendThread;
-	DWORD dwSendThreadID;
-
-	////서버로부터 데이터 수신을 맡을 스레드 핸들
-	//HANDLE m_hRecvThread;
-	//DWORD dwRecvThreadID;
+	uint32_t m_myId;
+	uint32_t m_targetId;
 };
 
 DWORD WINAPI SendData(LPVOID lpParam);
 
+bool recvn(SOCKET sock, void* buf, size_t len);
 
 void GetMutex();
 void ReleaseMutex();

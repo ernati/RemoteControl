@@ -1,162 +1,250 @@
-#pragma once
-#include <CCaptureScreenAndSendBitMap.h>
-#include <CPrintScreen.h>
-#include <CMultiThreadServer.h>
-#include <iostream>
+ï»¿#include <WinSock2.h>
+#include <windows.h>
+#include <cstdio>
+#include <vector>
+#include <algorithm>
 
-CCaptureScreenAndSendBitMap* pCaptureScreen = nullptr;
-CPrintScreen* g_printScreen = nullptr;
-CMultiThreadServer* server = nullptr;
+#pragma comment(lib, "ws2_32.lib")
 
-//Capture¸¦ À§ÇÑ ThreadFunction
-DWORD WINAPI ThreadFunction(LPVOID lpParam)
-{
-    // lpParamÀ» »ç¿ëÇÏ¿© Àü´ŞµÈ µ¥ÀÌÅÍ¸¦ Ã³¸®ÇÒ ¼ö ÀÖ½À´Ï´Ù.
+#include "Message.h"
 
-    HINSTANCE hInstance = GetModuleHandle(NULL);
+// â€”â€”â€” í´ë¼ì´ì–¸íŠ¸ ì •ë³´ìš© êµ¬ì¡°ì²´ â€”â€”â€”
+struct SenderInfo {
+    SOCKET   sock;
+    uint32_t id;
+};
 
-    pCaptureScreen = new CCaptureScreenAndSendBitMap();
-    g_printScreen = new CPrintScreen(hInstance);
+struct ReceiverInfo {
+    SOCKET   sock;
+    uint32_t id;
+    uint32_t targetId;
+};
 
-    g_printScreen->setCaptureScreen(pCaptureScreen);
-    g_printScreen->sethInstance(hInstance);
+// â€”â€”â€” í¬ì›Œë”© íŒŒë¼ë¯¸í„° â€”â€”â€”
+struct ForwardParam {
+    SOCKET senderSock;
+    SOCKET recvSock;
+};
 
+// â€”â€”â€” ì „ì—­ ë°ì´í„° â€”â€”â€”
+CRITICAL_SECTION                   g_cs;
+std::vector<SenderInfo>            g_senders;
+std::vector<ReceiverInfo>          g_receivers;
 
-    //1. null check
-    if (!g_printScreen->m_hInstance) {
-        std::cerr << "m_captureScreen is nullptr" << std::endl;
-        return false;
+// í•¨ìˆ˜ ì„ ì–¸
+DWORD WINAPI ClientHandshake(LPVOID lpParam);
+DWORD WINAPI MatchThread(LPVOID lpParam);
+DWORD WINAPI ForwardThread(LPVOID lpParam);
+bool recvn_server(SOCKET sock, void* buf, size_t len);
+int sendn_server(SOCKET sock, const char* buf, int len);
+
+// â€”â€”â€” í´ë¼ì´ì–¸íŠ¸ í•¸ë“œì…°ì´í¬ ì²˜ë¦¬ ì“°ë ˆë“œ â€”â€”â€”
+DWORD WINAPI ClientHandshake(LPVOID lpParam) {
+    SOCKET s = (SOCKET)lpParam;
+    ConnRequestHeader hdr;
+
+    // 1. ìš”ì²­ í—¤ë” ìˆ˜ì‹ 
+    if (!recvn_server(s, &hdr, sizeof(hdr))) {
+        closesocket(s);
+        return 0;
     }
 
-    //2. ÀÏÁ¤ ½Ã°£ ¸¶´Ù È­¸é Ä¸Ã³
-    // ¹İº¹ °£°İ ¼³Á¤ (¿¹: 100ms)
-    while (true) {
-        //2.1 È­¸é Ä¸Ã³
-        pCaptureScreen->CaptureScreen();
-        if (pCaptureScreen->CheckSuccessCapture()) {
-            // 2. ÀÌÀü Ä¸ÃÄµÈ ÀÌ¹ÌÁö°¡ ÀÖ´Ù¸é ÇØÁ¦
-            pCaptureScreen->UpdateNewBitmap();
+    // (ë„¤íŠ¸ì›Œí¬ ë°”ì´íŠ¸ ìˆœì„œ â†’ í˜¸ìŠ¤íŠ¸ ë°”ì´íŠ¸ ìˆœì„œ)
+    uint32_t myId = ntohl(hdr.myId);
+    uint32_t targetId = ntohl(hdr.target);
 
-            //2.2 ThreadClient ³» BITMAP º¯¼ö·Î °ª ÀÌµ¿
-            server->m_hBitmap = pCaptureScreen->GetnewBitmap();
-
-            //// 2.3 BITMAP Á¤º¸ Ãâ·Â
-            //if (server->m_hBitmap) {
-            //    BITMAP bmpInfo;
-            //    if (GetObject(server->m_hBitmap, sizeof(BITMAP), &bmpInfo)) {
-            //        std::cout << "=== Captured BITMAP Info ===\n";
-            //        std::cout << "Width       : " << bmpInfo.bmWidth << "\n";
-            //        std::cout << "Height      : " << bmpInfo.bmHeight << "\n";
-            //        std::cout << "Planes      : " << bmpInfo.bmPlanes << "\n";
-            //        std::cout << "BitCount    : " << bmpInfo.bmBitsPixel << "\n";
-            //        std::cout << "WidthBytes  : " << bmpInfo.bmWidthBytes << "\n";
-            //        std::cout << "NumberOfBits: " << bmpInfo.bmHeight * bmpInfo.bmWidthBytes * 8 << "\n";
-            //        std::cout << "Reserved    : " << bmpInfo.bmBits << "\n";
-            //        std::cout << "============================\n";
-            //    }
-            //    else {
-            //        std::cerr << "GetObject failed: " << GetLastError() << std::endl;
-            //    }
-            //}
-            //// ¿¹»ó Ãâ·Â
-            //== = Captured BITMAP Info == =
-            //    Width       : 2560
-            //    Height : 1440
-            //    Planes : 1
-            //    BitCount : 32
-            //    WidthBytes : 10240
-            //    NumberOfBits : 117964800
-            //    Reserved : 0000000000000000
-            //============================
-
-            ////2.4 Message ±¸Á¶Ã¼ »ı¼º
-            //// === ¿©±â¿¡ TEST ÄÚµå »ğÀÔ ===
-            //if (server->m_hBitmap) {
-            //    // 1) ¿øº» BITMAP Á¤º¸ ¾ò±â
-            //    BITMAP origBmp;
-            //    if (!GetObject(server->m_hBitmap, sizeof(origBmp), &origBmp)) {
-            //        std::cerr << "GetObject ½ÇÆĞ: " << GetLastError() << "\n";
-            //        continue;
-            //    }
-            //    size_t bitsSize = static_cast<size_t>(origBmp.bmHeight) * origBmp.bmWidthBytes;
-            //    uint8_t* bits = new uint8_t[bitsSize];
-            //    if (GetBitmapBits(server->m_hBitmap, static_cast<LONG>(bitsSize), bits) == 0) {
-            //        std::cerr << "GetBitmapBits ½ÇÆĞ\n";
-            //        delete[] bits;
-            //        continue;
-            //    }
-
-            //    // 2) Message ¹öÆÛ »ı¼º
-            //    size_t msgSize = 0;
-            //    uint8_t* msgBuf = createMessageBuffer_tmp(origBmp, bits, bitsSize, msgSize);
-            //    Message* msg = reinterpret_cast<Message*>(msgBuf);
-
-            //    // 3) Ã¼Å©¼¶ °ËÁõ
-            //    // ³×Æ®¿öÅ© ¹ÙÀÌÆ® ¿À´õ ¡æ È£½ºÆ® ¹ÙÀÌÆ® ¿À´õ
-            //    uint32_t recvCrc = ntohl(msg->checksum);
-            //    // °è»êÀ» À§ÇØ ¿øº» checksum ÇÊµå¸¦ 0À¸·Î ¼¼ÆÃ
-            //    std::memset(msgBuf + offsetof(Message, checksum), 0, sizeof(msg->checksum));
-            //    const uint8_t* csStart = msgBuf + sizeof(msg->magic);
-            //    size_t        csLen = msgSize - sizeof(msg->magic);
-            //    uint32_t      calcCrc = calculateCRC32(csStart, csLen);
-
-            //    if (recvCrc != calcCrc) {
-            //        std::cerr << "Ã¼Å©¼¶ ºÒÀÏÄ¡! ¼ö½Å: " << recvCrc
-            //            << " °è»ê: " << calcCrc << "\n";
-            //    }
-            //    else {
-            //        std::cout << "Ã¼Å©¼¶ Á¤»ó\n";
-
-            //        // 4) Message Çì´õ vs ¿øº» BITMAP ºñ±³
-            //        bool match = true;
-            //        if (ntohl(msg->width) != static_cast<uint32_t>(origBmp.bmWidth))    match = false;
-            //        if (ntohl(msg->height) != static_cast<uint32_t>(origBmp.bmHeight))   match = false;
-            //        if (ntohs(msg->planes) != origBmp.bmPlanes)                         match = false;
-            //        if (ntohs(msg->bitCount) != origBmp.bmBitsPixel)                     match = false;
-            //        if (ntohl(msg->widthBytes) != origBmp.bmWidthBytes)                  match = false;
-            //        if (ntohll(msg->payloadSize) != bitsSize)                            match = false;
-
-            //        if (match) {
-            //            std::cout << "Message Çì´õ¿Í ¿øº» BITMAP Á¤º¸ ÀÏÄ¡\n";
-            //        }
-            //        else {
-            //            std::cerr << "Message Çì´õ¿Í BITMAP Á¤º¸ ºÒÀÏÄ¡\n";
-            //        }
-            //    }
-
-            //    // 5) ¸Ş¸ğ¸® ÇØÁ¦
-            //    delete[] bits;
-            //    delete[] msgBuf;
-            //}
+    ConnResponse resp = {};
+    EnterCriticalSection(&g_cs);
+    if (hdr.mode == 's') {
+        // â€” ì†¡ì‹ ì ë“±ë¡ â€”
+        g_senders.push_back({ s, myId });
+        resp.success = 1;
+        strcpy_s(resp.info, "Registered as sender");
+    }
+    else if (hdr.mode == 'r') {
+        // â€” ìˆ˜ì‹ ì ìš”ì²­ ì‹œ ë§¤ì¹­ ê²€ì‚¬ â€”
+        auto it = std::find_if(
+            g_senders.begin(), g_senders.end(),
+            [targetId](const SenderInfo& si) { return si.id == targetId; }
+        );
+        if (it != g_senders.end()) {
+            // ë§¤ì¹­ ì„±ê³µ
+            g_receivers.push_back({ s, myId, targetId });
+            resp.success = 1;
+            strcpy_s(resp.info, "Matched sender found");
         }
-
-        Sleep(100);
+        else {
+            // ë§¤ì¹­ ì‹¤íŒ¨
+            resp.success = 0;
+            strcpy_s(resp.info, "No sender with given ID");
+        }
     }
+    else {
+        resp.success = 0;
+        strcpy_s(resp.info, "Invalid mode");
+    }
+    LeaveCriticalSection(&g_cs);
 
-    return 0;  // ½º·¹µå°¡ Á¾·áµÉ ¶§ ¹İÈ¯ÇÒ °ª
+    // 2) ì‘ë‹µ ì „ì†¡
+    ::send(s, reinterpret_cast<char*>(&resp), sizeof(resp), 0);
+
+    return 0; // ì´í›„ ì‹¤ì œ ë°ì´í„° ì†¡ìˆ˜ì‹  ìŠ¤ë ˆë“œë¡œ í™•ì¥ ê°€ëŠ¥
 }
 
-// main ÇÔ¼ö: ÄÜ¼Ö ¾ÖÇÃ¸®ÄÉÀÌ¼Ç ÇüÅÂÀÇ ÁøÀÔÁ¡
+// â€”â€”â€” Ctrl+C ì²˜ë¦¬ê¸° â€”â€”â€”
+BOOL CtrlHandler(DWORD type) {
+    if (type == CTRL_C_EVENT) {
+        EnterCriticalSection(&g_cs);
+        for (auto& si : g_senders)    closesocket(si.sock);
+        for (auto& ri : g_receivers)  closesocket(ri.sock);
+        g_senders.clear();
+        g_receivers.clear();
+        LeaveCriticalSection(&g_cs);
+
+        WSACleanup();
+        exit(0);
+    }
+    return FALSE;
+}
+
 int main() {
+    // WinSock ì´ˆê¸°í™”
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        printf("WSAStartup failed\n");
+        return -1;
+    }
 
-    server = new CMultiThreadServer();
+    InitializeCriticalSection(&g_cs);
+    SetConsoleCtrlHandler((PHANDLER_ROUTINE)CtrlHandler, TRUE);
 
-    // Window¸¦ À§ÇÑ Thread »ı¼º
-    HANDLE hThread = CreateThread(
-        NULL,          // ±âº» º¸¾È ¼Ó¼º
-        0,             // ±âº» ½ºÅÃ Å©±â
-        ThreadFunction, // ½º·¹µå ÇÔ¼ö
-        NULL,         // ½º·¹µå ÇÔ¼ö¿¡ Àü´ŞÇÒ ¸Å°³º¯¼ö
-        0,             // »ı¼º Áï½Ã ½ÇÇà
-        NULL           // ½º·¹µå ID (ÇÊ¿ä ½Ã ÀúÀå)
+    SOCKET listenSock = ::socket(AF_INET, SOCK_STREAM, 0);
+    SOCKADDR_IN addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(25000);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    // ìŠ¤ë ˆë“œ1: ë§¤ì¹­ ì“°ë ˆë“œ
+    DWORD matchTid;
+    HANDLE hMatch = CreateThread(nullptr, 0, MatchThread, nullptr, 0, &matchTid);
+    CloseHandle(hMatch);
+
+    bind(listenSock, (SOCKADDR*)&addr, sizeof(addr));
+    listen(listenSock, SOMAXCONN);
+    printf("Server listening on port 25000...\n");
+
+    while (true) {
+        SOCKET client = accept(listenSock, nullptr, nullptr);
+        if (client == INVALID_SOCKET) continue;
+
+        // ì—°ê²°ëœ í´ë¼ì´ì–¸íŠ¸ë§ˆë‹¤ í•¸ë“œì…°ì´í¬ ì“°ë ˆë“œ ìƒì„±
+        DWORD tid;
+        HANDLE h = CreateThread(
+            nullptr, 0,
+            ClientHandshake,
+            (LPVOID)client,
+            0, &tid
+        );
+        CloseHandle(h);
+    }
+
+    // (ì ˆëŒ€ ëª» ì˜´)
+    DeleteCriticalSection(&g_cs);
+    closesocket(listenSock);
+    WSACleanup();
+    return 0;
+}
+
+// â€”â€”â€” ë§¤ì¹­ ë° ë°ì´í„°ì „ë‹¬ ì‹œì‘ ì“°ë ˆë“œ â€”â€”â€”
+DWORD WINAPI MatchThread(LPVOID) {
+    while (true) {
+        EnterCriticalSection(&g_cs);
+        for (auto it = g_receivers.begin(); it != g_receivers.end(); ) {
+            uint32_t target = it->targetId;
+            auto sit = std::find_if(g_senders.begin(), g_senders.end(),
+                [target](const SenderInfo& si) { return si.id == target; });
+            if (sit != g_senders.end()) {
+                // ë§¤ì¹­ ì„±ì‚¬: ì†¡ì‹ ->ìˆ˜ì‹  ì—°ê²°
+                ForwardParam* param = new ForwardParam{ sit->sock, it->sock };
+                DWORD fid;
+                HANDLE h = CreateThread(nullptr, 0, ForwardThread, param, 0, &fid);
+                CloseHandle(h);
+                // ë²¡í„°ì—ì„œ ìˆ˜ì‹ ì ì œê±°
+                it = g_receivers.erase(it);
+                continue;
+            }
+            ++it;
+        }
+        LeaveCriticalSection(&g_cs);
+        Sleep(100);
+    }
+    return 0;
+}
+
+// â€”â€”â€” ë°ì´í„° í¬ì›Œë”© ì“°ë ˆë“œ â€”â€”â€”
+DWORD WINAPI ForwardThread(LPVOID lpParam) {
+    ForwardParam* p = (ForwardParam*)lpParam;
+    SOCKET sendSock = p->senderSock;
+    SOCKET recvSock = p->recvSock;
+    delete p;
+
+    // Message í—¤ë” í¬ê¸°
+    size_t headerSize = offsetof(Message, payload);
+    while (true) {
+        // 1) í—¤ë” ìˆ˜ì‹ 
+        std::vector<uint8_t> headerBuf(headerSize);
+        if (!recvn_server(sendSock, headerBuf.data(), headerSize)) break;
+        // 2) payloadSize íŒŒì‹±
+        Message* mh = reinterpret_cast<Message*>(headerBuf.data());
+        if (ntohl(mh->magic) != 0x424D4350) break;
+        uint64_t payloadSize = ntohll(mh->payloadSize);
+        size_t totalSize = headerSize + payloadSize;
+        // 3) ì „ì²´ ë²„í¼ í• ë‹¹
+        uint8_t* buf = new uint8_t[totalSize];
+        memcpy(buf, headerBuf.data(), headerSize);
+        if (!recvn_server(sendSock, buf + headerSize, payloadSize)) { delete[] buf; break; }
+        // 4) ìˆ˜ì‹ ìì—ê²Œ ì „ì†¡
+        if (sendn_server(recvSock, (char*)buf, (int)totalSize) == SOCKET_ERROR) { delete[] buf; break; }
+        delete[] buf;
+    }
+
+    closesocket(sendSock);
+    closesocket(recvSock);
+
+    // **ë²¡í„°ì—ì„œ sender ì •ë³´ ì‚­ì œ**
+    EnterCriticalSection(&g_cs);
+    auto it = std::find_if(
+        g_senders.begin(), g_senders.end(),
+        [sendSock](const SenderInfo& si) { return si.sock == sendSock; }
     );
+    if (it != g_senders.end()) {
+        g_senders.erase(it);
+    }
+    LeaveCriticalSection(&g_cs);
 
-    int nRet = 0;
+    return 0;
+}
 
-	nRet = server->StartServer(9000);
-	if (nRet < 0) {
-		printf("server.StartServer() failed, nRet:%d\n", nRet);
-	}
 
-	return nRet;
+// â€”â€”â€” ìœ í‹¸: ì •í™•íˆ recv(len) ë°”ì´íŠ¸ ì½ê¸° â€”â€”â€”
+bool recvn_server(SOCKET sock, void* buf, size_t len) {
+    uint8_t* ptr = (uint8_t*)buf;
+    size_t rec = 0;
+    while (rec < len) {
+        int r = recv(sock, (char*)(ptr + rec), int(len - rec), 0);
+        if (r <= 0) return false;
+        rec += r;
+    }
+    return true;
+}
+
+// â€”â€”â€” ìœ í‹¸: send ì „ë¶€ ë³´ë‚´ê¸° â€”â€”â€”
+int sendn_server(SOCKET sock, const char* buf, int len) {
+    int sent = 0;
+    while (sent < len) {
+        int n = send(sock, buf + sent, len - sent, 0);
+        if (n == SOCKET_ERROR) return SOCKET_ERROR;
+        sent += n;
+    }
+    return sent;
 }
