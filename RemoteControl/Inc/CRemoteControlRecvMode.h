@@ -11,7 +11,7 @@ public:
 	virtual ~CRemoteControlRecvMode();
 
 	//1. 클라이언트 시작 - 소켓 생성, 커넥트
-	int StartClient(int port);
+	int StartClient(int port, const char* serverIp = "127.0.0.1");
 
 	//2. 서버와의 통신
 	int Communication();
@@ -29,7 +29,7 @@ private:
 	//1.2 소켓 생성
 	bool CreateCommunicationSocket();
 	//1.3 서버 커넥트
-	bool ConnectServer();
+	bool ConnectServer(const char* ip, int port);
 
 	bool PerformHandshake();
 
@@ -45,7 +45,6 @@ private:
 	//서버와의 통신 소켓
 	SOCKET m_CommunicationSocket;
 	SOCKADDR_IN m_Serveraddr;
-	int m_port;
 
 	//서버와의 통신 버퍼
 	char m_sendBuffer[1024];

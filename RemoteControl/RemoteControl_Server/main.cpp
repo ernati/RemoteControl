@@ -3,9 +3,9 @@
 #include <cstdio>
 #include <vector>
 #include <algorithm>
+#include <Ws2tcpip.h>     // inet_ntop, getaddrinfo
 
 #pragma comment(lib, "ws2_32.lib")
-
 #include "Message.h"
 
 // ——— 클라이언트 정보용 구조체 ———
@@ -107,8 +107,10 @@ BOOL CtrlHandler(DWORD type) {
     return FALSE;
 }
 
+
+
 int main() {
-    // WinSock 초기화
+    // 1. WinSock 초기화
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
         printf("WSAStartup failed\n");
@@ -118,20 +120,61 @@ int main() {
     InitializeCriticalSection(&g_cs);
     SetConsoleCtrlHandler((PHANDLER_ROUTINE)CtrlHandler, TRUE);
 
-    SOCKET listenSock = ::socket(AF_INET, SOCK_STREAM, 0);
+    // 2. 서버 소켓 생성
+    SOCKET listenSock = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (listenSock == INVALID_SOCKET) {
+        printf("socket() failed: %d\n", WSAGetLastError());
+        return -1;
+    }
+
+    // 3. SO_REUSEADDR 옵션 (테스트 반복 시 포트 즉시 재사용)
+    BOOL reuse = TRUE;
+    if (setsockopt(listenSock, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) != 0) {
+        printf("setsockopt(SO_REUSEADDR) failed\n");
+    }
+
+    // 4. (선택) 로컬에 바인딩된 IP 목록 출력
+    char hostname[256];
+    gethostname(hostname, sizeof(hostname));
+    addrinfo hints = {};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    addrinfo* res = nullptr;
+    if (getaddrinfo(hostname, nullptr, &hints, &res) == 0) {
+        printf("Available local IP addresses:\n");
+        for (auto p = res; p; p = p->ai_next) {
+            sockaddr_in* in = (sockaddr_in*)p->ai_addr;
+            char ipbuf[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &in->sin_addr, ipbuf, sizeof(ipbuf));
+            printf("  - %s\n", ipbuf);
+        }
+        freeaddrinfo(res);
+    }
+
+    // 5. INADDR_ANY(0.0.0.0) 바인딩 → 모든 NIC로부터 연결 허용
     SOCKADDR_IN addr = {};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(25000);
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (bind(listenSock, (SOCKADDR*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+        printf("bind() failed: %d\n", WSAGetLastError());
+        closesocket(listenSock);
+        return -1;
+    }
 
-    // 스레드1: 매칭 쓰레드
+    // 6. 리슨
+    if (listen(listenSock, SOMAXCONN) == SOCKET_ERROR) {
+        printf("listen() failed: %d\n", WSAGetLastError());
+        closesocket(listenSock);
+        return -1;
+    }
+    printf("Server listening on port 25000 (all interfaces)...\n");
+    printf(" ※ 외부망에서 접속하려면 해당 포트에 대한 포트포워딩/방화벽 설정이 필요합니다.\n\n");
+
+    // 7. 스레드1: 매칭 쓰레드
     DWORD matchTid;
     HANDLE hMatch = CreateThread(nullptr, 0, MatchThread, nullptr, 0, &matchTid);
     CloseHandle(hMatch);
-
-    bind(listenSock, (SOCKADDR*)&addr, sizeof(addr));
-    listen(listenSock, SOMAXCONN);
-    printf("Server listening on port 25000...\n");
 
     while (true) {
         SOCKET client = accept(listenSock, nullptr, nullptr);
@@ -148,7 +191,7 @@ int main() {
         CloseHandle(h);
     }
 
-    // (절대 못 옴)
+    // 도달하지 않는 코드
     DeleteCriticalSection(&g_cs);
     closesocket(listenSock);
     WSACleanup();

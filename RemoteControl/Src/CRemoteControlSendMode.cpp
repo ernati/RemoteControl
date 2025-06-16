@@ -79,7 +79,28 @@ bool CRemoteControlSendMode::ConnectServer(const char* ip, int port) {
 	m_serverAddr.sin_family = AF_INET;
 	m_serverAddr.sin_port = htons(port);
 	m_serverAddr.sin_addr.s_addr = inet_addr(ip);
-	return (connect(m_socket, (SOCKADDR*)&m_serverAddr, sizeof(m_serverAddr)) != SOCKET_ERROR);
+
+	int ret = connect(m_socket, (SOCKADDR*)&m_serverAddr, sizeof(m_serverAddr));
+	if (ret == SOCKET_ERROR) {
+		int err = WSAGetLastError();
+
+		// 에러 메시지 문자열을 얻어올 버퍼
+		char msgBuf[512] = { 0 };
+		FormatMessageA(
+			FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+			NULL,
+			err,
+			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+			msgBuf,
+			(DWORD)sizeof(msgBuf),
+			NULL
+		);
+
+		printf("connect() failed. Error %d: %s\n", err, msgBuf);
+		return false;
+	}
+
+	return true;
 }
 
 bool recvn_sendMode(SOCKET sock, void* buf, size_t len) {

@@ -5,6 +5,11 @@
 #include <cstdio>
 #include <cstring>
 
+
+#define LOCAL_SERVER "127.0.0.1"
+#define INNER_SERVER "192.168.45.15"
+#define SERVICE_SERVER "59.14.59.1"
+
 CRemoteControlRecvMode::CRemoteControlRecvMode()
 {
 	ZeroMemory(&m_Serveraddr, sizeof(m_Serveraddr));
@@ -13,7 +18,6 @@ CRemoteControlRecvMode::CRemoteControlRecvMode()
 
 CRemoteControlRecvMode::CRemoteControlRecvMode(uint32_t myId, uint32_t targetId)
 	: m_CommunicationSocket(INVALID_SOCKET)
-	, m_port(0)
 	, m_myId(myId)
 	, m_targetId(targetId)
 	, m_hBitmap(NULL)
@@ -32,9 +36,8 @@ CRemoteControlRecvMode::~CRemoteControlRecvMode()
 /*
 * public method
 */
-int CRemoteControlRecvMode::StartClient(int port)
+int CRemoteControlRecvMode::StartClient(int port, const char* serverIp)
 {
-	m_port = port;
 
 	if (!InitWinsock())
 	{
@@ -42,13 +45,13 @@ int CRemoteControlRecvMode::StartClient(int port)
 		return -1;
 	}
 
-	if (!CreateCommunicationSocket())
+	if (!CreateCommunicationSocket() )
 	{
 		printf("CreateCommunicationSocket() failed\n");
 		return -2;
 	}
 
-	if (!ConnectServer())
+	if (!ConnectServer(serverIp, port))
 	{
 		printf("ConnectServer() failed\n");
 		return -3;
@@ -121,17 +124,31 @@ bool CRemoteControlRecvMode::CreateCommunicationSocket()
 	return true;
 }
 
-bool CRemoteControlRecvMode::ConnectServer()
-{
+bool CRemoteControlRecvMode::ConnectServer(const char* ip, int port) {
 	m_Serveraddr.sin_family = AF_INET;
-	m_Serveraddr.sin_port = htons(m_port);
-	m_Serveraddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	m_Serveraddr.sin_port = htons(port);
+	m_Serveraddr.sin_addr.s_addr = inet_addr(ip);
 
-	if (connect(m_CommunicationSocket, (SOCKADDR*)&m_Serveraddr, sizeof(m_Serveraddr)) == SOCKET_ERROR)
-	{
-		printf("connect() failed\n");
+	int ret = connect(m_CommunicationSocket, (SOCKADDR*)&m_Serveraddr, sizeof(m_Serveraddr));
+	if (ret == SOCKET_ERROR) {
+		int err = WSAGetLastError();
+
+		// 에러 메시지 문자열을 얻어올 버퍼
+		char msgBuf[512] = { 0 };
+		FormatMessageA(
+			FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+			NULL,
+			err,
+			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+			msgBuf,
+			(DWORD)sizeof(msgBuf),
+			NULL
+		);
+
+		printf("connect() failed. Error %d: %s\n", err, msgBuf);
 		return false;
 	}
+
 	return true;
 }
 
