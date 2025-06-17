@@ -41,7 +41,7 @@ int sendn_server(SOCKET sock, const char* buf, int len);
 // ——— 클라이언트 핸드셰이크 처리 쓰레드 ———
 DWORD WINAPI ClientHandshake(LPVOID lpParam) {
     SOCKET s = (SOCKET)lpParam;
-    ConnRequestHeader hdr;
+    FullRequestHeader hdr{};
 
     // 1. 요청 헤더 수신
     if (!recvn_server(s, &hdr, sizeof(hdr))) {
@@ -49,9 +49,66 @@ DWORD WINAPI ClientHandshake(LPVOID lpParam) {
         return 0;
     }
 
+    //// 2) ID/PW 인증
+    //MYSQL* conn = mysql_init(NULL);
+    //if (!conn ||
+    //    !mysql_real_connect(conn,
+    //        "127.0.0.1",  // DB 호스트
+    //        "db_user",    // DB 사용자
+    //        "db_pass",    // DB 비밀번호
+    //        "db_name",    // DB 이름
+    //        3306, NULL, 0))
+    //{
+    //    closesocket(s);
+    //    if (conn) mysql_close(conn);
+    //    return 0;
+    //}
+
+    //ConnResponse authResp = {};
+    //// 사용자 조회
+    //{
+    //    char query[256];
+    //    snprintf(query, sizeof(query),
+    //        "SELECT pw FROM users WHERE id='%s'",
+    //        hdr.authId);
+    //    if (mysql_query(conn, query) == 0) {
+    //        MYSQL_RES* res = mysql_store_result(conn);
+    //        if (res && mysql_num_rows(res) > 0) {
+    //            MYSQL_ROW row = mysql_fetch_row(res);
+    //            if (strcmp(row[0], hdr.authPw) == 0) {
+    //                authResp.success = 1;
+    //                strcpy_s(authResp.info, "Authentication OK");
+    //            }
+    //            else {
+    //                authResp.success = 0;
+    //                strcpy_s(authResp.info, "Invalid password");
+    //            }
+    //        }
+    //        else {
+    //            // 신규 사용자 등록
+    //            mysql_free_result(res);
+    //            snprintf(query, sizeof(query),
+    //                "INSERT INTO users (id,pw) VALUES ('%s','%s')",
+    //                hdr.authId, hdr.authPw);
+    //            mysql_query(conn, query);
+    //            authResp.success = 1;
+    //            strcpy_s(authResp.info, "Registered new user");
+    //        }
+    //        if (res) mysql_free_result(res);
+    //    }
+    //}
+    //mysql_close(conn);
+
+    //// 인증 결과 전송 및 실패 시 즉시 연결 종료
+    //::send(s, reinterpret_cast<char*>(&authResp), sizeof(authResp), 0);
+    //if (!authResp.success) {
+    //    closesocket(s);
+    //    return 0;
+    //}
+
     // (네트워크 바이트 순서 → 호스트 바이트 순서)
     uint32_t myId = ntohl(hdr.myId);
-    uint32_t targetId = ntohl(hdr.target);
+    uint32_t targetId = ntohl(hdr.targetId);
 
     ConnResponse resp = {};
     EnterCriticalSection(&g_cs);

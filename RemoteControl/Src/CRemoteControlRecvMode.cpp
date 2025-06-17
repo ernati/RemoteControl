@@ -16,7 +16,8 @@ CRemoteControlRecvMode::CRemoteControlRecvMode()
 	ZeroMemory(&message, sizeof(message));
 }
 
-CRemoteControlRecvMode::CRemoteControlRecvMode(uint32_t myId, uint32_t targetId)
+CRemoteControlRecvMode::CRemoteControlRecvMode(const char* authId,
+	const char* authPw, uint32_t myId, uint32_t targetId)
 	: m_CommunicationSocket(INVALID_SOCKET)
 	, m_myId(myId)
 	, m_targetId(targetId)
@@ -24,6 +25,9 @@ CRemoteControlRecvMode::CRemoteControlRecvMode(uint32_t myId, uint32_t targetId)
 {
 	ZeroMemory(&m_Serveraddr, sizeof(m_Serveraddr));
 	ZeroMemory(&message, sizeof(message));
+
+	strncpy_s(m_authId, authId, _TRUNCATE);
+	strncpy_s(m_authPw, authPw, _TRUNCATE);
 }
 
 CRemoteControlRecvMode::~CRemoteControlRecvMode()
@@ -154,16 +158,30 @@ bool CRemoteControlRecvMode::ConnectServer(const char* ip, int port) {
 
 bool CRemoteControlRecvMode::PerformHandshake()
 {
-	ConnRequestHeader req{};
+	// 1) Unified header 생성
+	FullRequestHeader req{};
+	strncpy_s(req.authId, m_authId, _TRUNCATE);
+	strncpy_s(req.authPw, m_authPw, _TRUNCATE);
 	req.mode = 'r';
 	req.myId = htonl(m_myId);
-	req.target = htonl(m_targetId);
+	req.targetId = htonl(m_targetId);
 
+	// 2) 인증+핸드셰이크 요청 전송
 	if (send(m_CommunicationSocket, (char*)&req, sizeof(req), 0) != sizeof(req)) {
 		printf("Failed to send handshake request\n");
 		return false;
 	}
 
+	//// 3) 인증 응답 수신
+	//ConnResponse authResp{};
+	//if (!recvn(m_CommunicationSocket, &authResp, sizeof(authResp))) return false;
+	//if (authResp.success != 1) {
+	//	printf("Auth failed: %s\n", authResp.info);
+	//	return false;
+	//}
+	//printf("Auth OK: %s\n", authResp.info);
+
+	// 4. 핸드셰이크 응답 수신
 	ConnResponse resp{};
 	if (!recvn(m_CommunicationSocket, (void*) & resp, sizeof(resp))) {
 		printf("Failed to receive handshake response\n");
@@ -174,6 +192,7 @@ bool CRemoteControlRecvMode::PerformHandshake()
 		printf("Server error: %s\n", resp.info);
 		return false;
 	}
+
 	printf("Handshake success: %s\n", resp.info);
 	return true;
 }

@@ -14,7 +14,24 @@ CRemoteControlSendMode::CRemoteControlSendMode()
 	m_socket = INVALID_SOCKET;
 
 	m_myId = 0;
+}
 
+CRemoteControlSendMode::CRemoteControlSendMode(const char* authId,
+	const char* authPw, uint32_t myId)
+{
+	ZeroMemory(&m_wsa, sizeof(m_wsa));
+
+	m_port = 0;
+
+	ZeroMemory(m_recvBuffer, sizeof(m_recvBuffer));
+	ZeroMemory(m_sendBuffer, sizeof(m_sendBuffer));
+
+	m_socket = INVALID_SOCKET;
+
+	m_myId = myId;
+
+	strncpy_s(m_authId, authId, _TRUNCATE);
+	strncpy_s(m_authPw, authPw, _TRUNCATE);
 }
 
 CRemoteControlSendMode::~CRemoteControlSendMode() {
@@ -128,13 +145,32 @@ int sendn_sendMode(SOCKET sock, const char* buffer, int totalBytes) {
 }
 
 bool CRemoteControlSendMode::PerformHandshake() {
-	ConnRequestHeader req{};
+	
+	// 1) FullRequestHeader 구성
+	FullRequestHeader req{};
+	strncpy_s(req.authId, m_authId, _TRUNCATE);
+	strncpy_s(req.authPw, m_authPw, _TRUNCATE);
 	req.mode = 's';
 	req.myId = htonl(m_myId);
-	req.target = 0;
+	req.targetId = htonl(0);
+
+	//2. 헤더 전송
 	if (send(m_socket, (char*)&req, sizeof(req), 0) != sizeof(req)) {
 		return false;
 	}
+
+	//// 3) 첫번째 응답 - 인증 응답 수신
+	//ConnResponse authResp{};
+	//if (!recvn_sendMode(m_socket, &authResp, sizeof(authResp)))
+	//	return false;
+	//if (authResp.success != 1) {
+	//	printf("Auth failed: %s\n", authResp.info);
+	//	return false;
+	//}
+	//printf("Auth OK: %s\n", authResp.info);
+
+
+	//3. 두번째 응답 - 핸드셰이크 응답 수신
 	ConnResponse resp{};
 	if (!recvn_sendMode(m_socket, &resp, sizeof(resp))) return false;
 	if (resp.success != 1) {

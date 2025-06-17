@@ -11,7 +11,9 @@ class CRemoteControlSendMode
 	//method
 public:
 	CRemoteControlSendMode();
-	CRemoteControlSendMode(uint32_t myId);
+	CRemoteControlSendMode(const char* authId,
+		const char* authPw,
+		uint32_t myId);
 	virtual ~CRemoteControlSendMode();
 
 	// 1) Initialize, connect, handshake
@@ -64,6 +66,10 @@ private:
 	Message m_message;
 
 	uint32_t    m_myId;
+
+	// ¿Œ¡ıøÎ
+	char    m_authId[32];
+	char    m_authPw[32];
 
 };
 

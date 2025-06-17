@@ -7,7 +7,11 @@ class CRemoteControlRecvMode
 	//method
 public:
 	CRemoteControlRecvMode();
-	CRemoteControlRecvMode(uint32_t myId, uint32_t targetId);
+	// 새 생성자: authId, authPw, myId, targetId
+	CRemoteControlRecvMode(const char* authId,
+		const char* authPw,
+		uint32_t myId,
+		uint32_t targetId);
 	virtual ~CRemoteControlRecvMode();
 
 	//1. 클라이언트 시작 - 소켓 생성, 커넥트
@@ -57,6 +61,9 @@ private:
 
 	uint32_t m_myId;
 	uint32_t m_targetId;
+
+	char       m_authId[32];
+	char       m_authPw[32];
 };
 
 DWORD WINAPI SendData(LPVOID lpParam);

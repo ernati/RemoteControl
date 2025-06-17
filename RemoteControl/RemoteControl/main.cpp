@@ -241,32 +241,59 @@ DWORD WINAPI ThreadFunctionSend(LPVOID lpParam)
 // 사용법 출력
 void PrintHelp(const char* progName) {
     printf("Usage:\n");
-    printf("  %s recv <myId> <targetId>\n", progName);
-    printf("    <myId>      : this client's ID (recv mode)\n");
-    printf("    <targetId>  : ID of the send-mode client you want to connect to\n");
-    printf("  %s send <myId>\n", progName);
-    printf("    <myId>      : this client's ID (send mode)\n");
+    printf("  %s <network> <authId> <authPw> recv <myId> <targetId>\n", progName);
+    printf("    <network>   : loopback | inner | service\n");
+    printf("    <authId>    : your user ID\n");
+    printf("    <authPw>    : your password\n");
+    printf("    <myId>      : this client's numeric ID (recv mode)\n");
+    printf("    <targetId>  : ID of the send-mode client to connect to\n\n");
+    printf("  %s <network> <authId> <authPw> send <myId>\n", progName);
+    printf("    <myId>      : this client's numeric ID (send mode)\n");
 }
 
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
+    if (argc < 6) {
         PrintHelp(argv[0]);
         return -1;
     }
 
-    std::string mode(argv[1]);
+    // 1) 네트워크 선택
+    const char* serverIp = nullptr;
+    std::string net(argv[1]);
+    if (net == "loopback") {
+        serverIp = LOCAL_SERVER;
+    }
+    else if (net == "inner") {
+        serverIp = INNER_SERVER;
+    }
+    else if (net == "service") {
+        serverIp = SERVICE_SERVER;
+    }
+    else {
+        printf("Unknown network '%s'\n\n", argv[1]);
+        PrintHelp(argv[0]);
+        return -1;
+    }
+
+    // 2) 인증 정보
+    const char* authId = argv[2];
+    const char* authPw = argv[3];
+
+    // 3. 원격 화면 공유에 대한 파라미터
+    std::string mode(argv[4]);
     int nRet = 0;
 
     if (mode == "recv") {
-        // recv 모드는 myId 하나만 필요
-        if (argc < 3) {
+        if (argc < 7) {
             PrintHelp(argv[0]);
             return -1;
         }
-        uint32_t myId = static_cast<uint32_t>(std::stoul(argv[2]));
+        
+        uint32_t myId = static_cast<uint32_t>(std::stoul(argv[5]));
+        uint32_t targetId = static_cast<uint32_t>(std::stoul(argv[6]));
 
-        RecvMode = new CRemoteControlRecvMode();
+        RecvMode = new CRemoteControlRecvMode(authId, authPw, myId, targetId);
 
         // 캡처를 위한 Thread 생성
         HANDLE hThread = CreateThread(
@@ -278,7 +305,7 @@ int main(int argc, char* argv[]) {
             NULL           // 스레드 ID (필요 시 저장)
         );
 
-        nRet = RecvMode->StartClient(25000, SERVICE_SERVER);
+        nRet = RecvMode->StartClient(25000, serverIp);
         if (nRet < 0) {
             printf("RecvMode.StartClient() failed, nRet:%d\n", nRet);
         }
@@ -286,15 +313,14 @@ int main(int argc, char* argv[]) {
     }
     else if (mode == "send") {
         // send 모드는 ID, targetId 둘 다 필요
-        if (argc < 4) {
+        if (argc < 6) {
             PrintHelp(argv[0]);
             return -1;
         }
-        uint32_t myId = static_cast<uint32_t>(std::stoul(argv[2]));
-        uint32_t targetId = static_cast<uint32_t>(std::stoul(argv[3]));
+        uint32_t myId = static_cast<uint32_t>(std::stoul(argv[5]));
 
 
-        server = new CRemoteControlSendMode();
+        server = new CRemoteControlSendMode(authId, authPw, myId);
 
         // Window를 위한 Thread 생성
         HANDLE hThread = CreateThread(
@@ -308,7 +334,7 @@ int main(int argc, char* argv[]) {
 
         int nRet = 0;
 
-        nRet = server->StartClient(25000, SERVICE_SERVER);
+        nRet = server->StartClient(25000, serverIp);
         if (nRet < 0) {
             printf("server.StartServer() failed, nRet:%d\n", nRet);
         }

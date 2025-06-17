@@ -40,15 +40,27 @@ uint8_t* createMessageBuffer_tmp(
 
 
 
-// ——— 메시지 구조체(네트워크 바이트 순서) ———
+// ——— Legacy
 #pragma pack(push,1)
 struct ConnRequestHeader {
     char     mode;       // 's' = send, 'r' = recv
     uint32_t myId;       // host-byte-order ID
     uint32_t target;     // host-byte-order targetId (only for 'r')
 };
+#pragma pack(pop)
+
+
+
+// ——— 통합 요청 헤더 ———
+struct FullRequestHeader {
+    char     authId[32];    // null-terminated 사용자 ID
+    char     authPw[32];    // null-terminated 비밀번호
+    char     mode;          // 's' 또는 'r'
+    uint32_t myId;          // 네트워크 바이트 순서
+    uint32_t targetId;      // 네트워크 바이트 순서 (recv 모드일 때만 의미)
+};
+
 struct ConnResponse {
     uint8_t  success;    // 0 = fail, 1 = ok
     char     info[60];   // null-terminated 메시지
 };
-#pragma pack(pop)
