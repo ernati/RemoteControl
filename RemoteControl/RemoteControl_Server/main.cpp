@@ -8,6 +8,11 @@
 #pragma comment(lib, "ws2_32.lib")
 #include "Message.h"
 
+#include <mysql_driver.h>
+#include <mysql_connection.h>
+#include <cppconn/prepared_statement.h>
+#include <cppconn/resultset.h>
+
 // ——— 클라이언트 정보용 구조체 ———
 struct SenderInfo {
     SOCKET   sock;
@@ -49,62 +54,65 @@ DWORD WINAPI ClientHandshake(LPVOID lpParam) {
         return 0;
     }
 
-    //// 2) ID/PW 인증
-    //MYSQL* conn = mysql_init(NULL);
-    //if (!conn ||
-    //    !mysql_real_connect(conn,
-    //        "127.0.0.1",  // DB 호스트
-    //        "db_user",    // DB 사용자
-    //        "db_pass",    // DB 비밀번호
-    //        "db_name",    // DB 이름
-    //        3306, NULL, 0))
-    //{
-    //    closesocket(s);
-    //    if (conn) mysql_close(conn);
-    //    return 0;
-    //}
+    ConnResponse authResp{};
+    try {
+        // 2.1 드라이버/커넥션 생성
+        sql::mysql::MySQL_Driver* driver = sql::mysql::get_mysql_driver_instance();
+        std::unique_ptr<sql::Connection> conn(
+            driver->connect("tcp://127.0.0.1:3306",
+                "ernati",
+                "marin159753")
+        );
+        conn->setSchema("db_name");
 
-    //ConnResponse authResp = {};
-    //// 사용자 조회
-    //{
-    //    char query[256];
-    //    snprintf(query, sizeof(query),
-    //        "SELECT pw FROM users WHERE id='%s'",
-    //        hdr.authId);
-    //    if (mysql_query(conn, query) == 0) {
-    //        MYSQL_RES* res = mysql_store_result(conn);
-    //        if (res && mysql_num_rows(res) > 0) {
-    //            MYSQL_ROW row = mysql_fetch_row(res);
-    //            if (strcmp(row[0], hdr.authPw) == 0) {
-    //                authResp.success = 1;
-    //                strcpy_s(authResp.info, "Authentication OK");
-    //            }
-    //            else {
-    //                authResp.success = 0;
-    //                strcpy_s(authResp.info, "Invalid password");
-    //            }
-    //        }
-    //        else {
-    //            // 신규 사용자 등록
-    //            mysql_free_result(res);
-    //            snprintf(query, sizeof(query),
-    //                "INSERT INTO users (id,pw) VALUES ('%s','%s')",
-    //                hdr.authId, hdr.authPw);
-    //            mysql_query(conn, query);
-    //            authResp.success = 1;
-    //            strcpy_s(authResp.info, "Registered new user");
-    //        }
-    //        if (res) mysql_free_result(res);
-    //    }
-    //}
-    //mysql_close(conn);
+        // 2.2 사용자 조회
+        std::unique_ptr<sql::PreparedStatement> sel(
+            conn->prepareStatement("SELECT pw FROM users WHERE id = ?")
+        );
+        sel->setString(1, hdr.authId);
+        std::unique_ptr<sql::ResultSet> rs(sel->executeQuery());
 
-    //// 인증 결과 전송 및 실패 시 즉시 연결 종료
-    //::send(s, reinterpret_cast<char*>(&authResp), sizeof(authResp), 0);
-    //if (!authResp.success) {
-    //    closesocket(s);
-    //    return 0;
-    //}
+        if (rs->next()) {
+            // 기존 사용자 → 비밀번호 검증
+            std::string dbpw = rs->getString("pw");
+            if (dbpw == hdr.authPw) {
+                authResp.success = 1;
+                strcpy_s(authResp.info, "Authentication OK");
+            }
+            else {
+                authResp.success = 0;
+                strcpy_s(authResp.info, "Invalid password");
+            }
+        }
+        else {
+            // 신규 사용자 등록 로직 제거
+            /*std::unique_ptr<sql::PreparedStatement> ins(
+                conn->prepareStatement(
+                    "INSERT INTO users (id, pw) VALUES (?, ?)"
+                )
+            );
+            ins->setString(1, hdr.authId);
+            ins->setString(2, hdr.authPw);
+            ins->executeUpdate();
+
+            authResp.success = 1;*/
+            authResp.success = 0;
+            strcpy_s(authResp.info, "Invalid password");
+        }
+    }
+    catch (sql::SQLException& ex) {
+        // 예외 발생 시 인증 실패 처리
+        authResp.success = 0;
+        snprintf(authResp.info, sizeof(authResp.info),
+            "DB error: %s", ex.what());
+    }
+
+    // 인증 결과 전송 및 실패 시 즉시 연결 종료
+    ::send(s, reinterpret_cast<char*>(&authResp), sizeof(authResp), 0);
+    if (!authResp.success) {
+        closesocket(s);
+        return 0;
+    }
 
     // (네트워크 바이트 순서 → 호스트 바이트 순서)
     uint32_t myId = ntohl(hdr.myId);

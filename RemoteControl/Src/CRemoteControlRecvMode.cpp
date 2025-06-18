@@ -172,14 +172,14 @@ bool CRemoteControlRecvMode::PerformHandshake()
 		return false;
 	}
 
-	//// 3) 인증 응답 수신
-	//ConnResponse authResp{};
-	//if (!recvn(m_CommunicationSocket, &authResp, sizeof(authResp))) return false;
-	//if (authResp.success != 1) {
-	//	printf("Auth failed: %s\n", authResp.info);
-	//	return false;
-	//}
-	//printf("Auth OK: %s\n", authResp.info);
+	// 3) 인증 응답 수신
+	ConnResponse authResp{};
+	if (!recvn(m_CommunicationSocket, &authResp, sizeof(authResp))) return false;
+	if (authResp.success != 1) {
+		printf("Auth failed: %s\n", authResp.info);
+		return false;
+	}
+	printf("Auth OK: %s\n", authResp.info);
 
 	// 4. 핸드셰이크 응답 수신
 	ConnResponse resp{};
