@@ -1,5 +1,6 @@
 #pragma once
-#include <Message.h>
+#include "Message.h"
+#include "CommonAPI.h"
 #include <cstdio>
 
 class CRemoteControlRecvMode

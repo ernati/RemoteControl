@@ -120,30 +120,6 @@ bool CRemoteControlSendMode::ConnectServer(const char* ip, int port) {
 	return true;
 }
 
-bool recvn_sendMode(SOCKET sock, void* buf, size_t len) {
-	uint8_t* ptr = (uint8_t*)buf;
-	size_t received = 0;
-	while (received < len) {
-		int r = recv(sock, (char*)(ptr + received), int(len - received), 0);
-		if (r <= 0) return false;
-		received += r;
-	}
-	return true;
-}
-
-int sendn_sendMode(SOCKET sock, const char* buffer, int totalBytes) {
-	int totalSent = 0;
-	while (totalSent < totalBytes) {
-		int n = send(sock, buffer + totalSent, totalBytes - totalSent, 0);
-		if (n == SOCKET_ERROR) {
-			// 에러 처리: 필요하면 WSAGetLastError()로 에러 코드 확인
-			return SOCKET_ERROR;
-		}
-		totalSent += n;
-	}
-	return totalSent;
-}
-
 bool CRemoteControlSendMode::PerformHandshake() {
 	
 	// 1) FullRequestHeader 구성
@@ -161,7 +137,7 @@ bool CRemoteControlSendMode::PerformHandshake() {
 
 	// 3) 첫번째 응답 - 인증 응답 수신
 	ConnResponse authResp{};
-	if (!recvn_sendMode(m_socket, &authResp, sizeof(authResp)))
+	if (!recvn(m_socket, &authResp, sizeof(authResp)))
 		return false;
 	if (authResp.success != 1) {
 		printf("Auth failed: %s\n", authResp.info);
@@ -172,7 +148,7 @@ bool CRemoteControlSendMode::PerformHandshake() {
 
 	//3. 두번째 응답 - 핸드셰이크 응답 수신
 	ConnResponse resp{};
-	if (!recvn_sendMode(m_socket, &resp, sizeof(resp))) return false;
+	if (!recvn(m_socket, &resp, sizeof(resp))) return false;
 	if (resp.success != 1) {
 		printf("Server: %s\n", resp.info);
 		return false;
@@ -245,7 +221,7 @@ DWORD WINAPI SendData_SendMode(LPVOID lpParam)
 			Message* msg = reinterpret_cast<Message*>(msgBuf);
 
 			//1.3 사용자가 입력한 문자열을 서버에 전송한다.
-			sendn_sendMode(hSocket, (const char*)msgBuf, msgSize);
+			sendn(hSocket, (const char*)msgBuf, msgSize);
 
 			//1.4 메모리 해제
 			delete[] bits;

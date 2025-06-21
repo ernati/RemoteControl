@@ -88,18 +88,6 @@ int CRemoteControlRecvMode::Communication()
 	return 0;
 }
 
-// sock로부터 정확히 len 바이트를 받을 때까지 반복 호출
-bool recvn(SOCKET sock, void* buf, size_t len) {
-	uint8_t* ptr = reinterpret_cast<uint8_t*>(buf);
-	size_t   received = 0;
-	while (received < len) {
-		int r = recv(sock, reinterpret_cast<char*>(ptr + received), int(len - received), 0);
-		if (r <= 0) return false;  // 에러 혹은 연결 종료
-		received += r;
-	}
-	return true;
-}
-
 
 
 /*

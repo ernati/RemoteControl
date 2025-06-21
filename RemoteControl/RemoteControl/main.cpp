@@ -54,8 +54,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
         if (RecvMode->m_hBitmap != NULL) {
 
-            //RecvMode->GetMutex();
-
             // 3. 획득한 기존 DC와 동일한 속성을 가지는 DC를 메모리에 생성하고, 그 핸들을 획득. - 이미지 처리는 메모리 DC에서 수행.
             // SelectObject - DC가 특정 GDI 객체( 여기서는 비트맵 )을 선택하도록 하여, 이후 그리기 작업이 해당 객체의 속성을 사용하도록 함.
             HDC hMemDC = CreateCompatibleDC(hdc);
@@ -79,9 +77,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             // 6. 선택 객체 원복 후 메모리 DC 삭제 - 메모리 누수 방지
             SelectObject(hMemDC, hOldBmp);
             DeleteDC(hMemDC);
-
-            //ReleaseMutex
-            //RecvMode->ReleaseMutex_Custom();
         }
 
         //7. EndPaint - BeginPaint 함수로부터 반환된 DC 핸들을 해제
