@@ -1,8 +1,12 @@
 #include "Message.h"
+#include <iostream>
 
-
-// checksum °è»ê ÇÔ¼ö - crc
+// CRC32 ì²´í¬ì„¬ ê³„ì‚° í•¨ìˆ˜
 uint32_t calculateCRC32(const uint8_t* data, size_t length) {
+    if (data == nullptr || length == 0) {
+        return 0;  // ì˜ëª»ëœ ì…ë ¥ì— ëŒ€í•œ ì•ˆì „í•œ ë°˜í™˜ê°’
+    }
+
     uint32_t crc = 0xFFFFFFFF;
     for (size_t i = 0; i < length; ++i) {
         crc ^= data[i];
@@ -15,12 +19,12 @@ uint32_t calculateCRC32(const uint8_t* data, size_t length) {
 }
 
 /**
- * @brief  Message ¹öÆÛ¸¦ new[]·Î ÇÒ´çÇÏ¿© ¹İÈ¯
- * @param  bmp       GetObject·Î ¾òÀº BITMAP ±¸Á¶Ã¼
- * @param  bits      ºñÆ®¸Ê ÇÈ¼¿ µ¥ÀÌÅÍ Æ÷ÀÎÅÍ
- * @param  bitsSize  ÇÈ¼¿ µ¥ÀÌÅÍ Å©±â(bytes)
- * @param  outTotal  »ı¼ºµÈ ÀüÃ¼ ¹öÆÛ Å©±â(bytes) ¹İÈ¯
- * @return new·Î ÇÒ´çµÈ Message ¹öÆÛ (»ç¿ë ÈÄ delete[])
+ * @brief  Message ë²„í¼ë¥¼ new[]ë¡œ í• ë‹¹í•˜ì—¬ ë°˜í™˜
+ * @param  bmp       GetObjectë¡œ ì–»ì€ BITMAP êµ¬ì¡°ì²´
+ * @param  bits      ë¹„íŠ¸ë§µ í”½ì…€ ë°ì´í„° í¬ì¸í„°
+ * @param  bitsSize  í”½ì…€ ë°ì´í„° í¬ê¸°(bytes)
+ * @param  outTotal  ìƒì„±ëœ ì „ì²´ ë²„í¼ í¬ê¸°(bytes) ë°˜í™˜
+ * @return newë¡œ í• ë‹¹ëœ Message ë²„í¼ (ì‚¬ìš© í›„ delete[])
  */
 uint8_t* createMessageBuffer_tmp(
     const BITMAP& bmp,
@@ -28,16 +32,32 @@ uint8_t* createMessageBuffer_tmp(
     size_t bitsSize,
     size_t& outTotal
 ) {
-    // flexible array Á¦¿ÜÇÑ Çì´õ Å©±â
+    // ì…ë ¥ ë§¤ê°œë³€ìˆ˜ ê²€ì¦
+    if (bits == nullptr || bitsSize == 0) {
+        std::cerr << "createMessageBuffer_tmp: ì˜ëª»ëœ ì…ë ¥ ë§¤ê°œë³€ìˆ˜" << std::endl;
+        outTotal = 0;
+        return nullptr;
+    }
+
+    // flexible array ë•Œë¬¸ì— í—¤ë” í¬ê¸°
     const size_t headerSize = sizeof(Message) - sizeof(uint8_t);
     outTotal = headerSize + bitsSize;
 
-    // new·Î ¹öÆÛ ÇÒ´ç
-    uint8_t* buf = new uint8_t[outTotal];
+    // ë©”ëª¨ë¦¬ í• ë‹¹ ì‹œë„
+    uint8_t* buf = nullptr;
+    try {
+        buf = new uint8_t[outTotal];
+    }
+    catch (const std::bad_alloc& e) {
+        std::cerr << "createMessageBuffer_tmp: ë©”ëª¨ë¦¬ í• ë‹¹ ì‹¤íŒ¨: " << e.what() << std::endl;
+        outTotal = 0;
+        return nullptr;
+    }
+
     Message* msg = reinterpret_cast<Message*>(buf);
 
-    // 1) Çì´õ ÇÊµå Ã¤¿ì±â (È£½ºÆ®¡æ³×Æ®¿öÅ© ¹ÙÀÌÆ® ¿À´õ)
-    msg->magic = htonl(0x424D4350);          // 'BMCP'
+    // 1) í—¤ë” í•„ë“œ ì±„ìš°ê¸° (í˜¸ìŠ¤íŠ¸ë°”ì´íŠ¸ì—ì„œ ë„¤íŠ¸ì›Œí¬ ë°”ì´íŠ¸ ìˆœì„œ)
+    msg->magic = htonl(MESSAGE_MAGIC_NUMBER);    // ìƒìˆ˜ ì‚¬ìš©
     msg->width = htonl(bmp.bmWidth);
     msg->height = htonl(bmp.bmHeight);
     msg->planes = htons(bmp.bmPlanes);
@@ -45,10 +65,10 @@ uint8_t* createMessageBuffer_tmp(
     msg->widthBytes = htonl(bmp.bmWidthBytes);
     msg->payloadSize = htonll(bitsSize);
 
-    // 2) ÆäÀÌ·Îµå º¹»ç
+    // 2) í˜ì´ë¡œë“œ ë³µì‚¬
     memcpy(msg->payload, bits, bitsSize);
 
-    // 3) Ã¼Å©¼¶ °è»ê: magic Á÷ÈÄºÎÅÍ ³¡±îÁö(header Á¦¿Ü magic) ¿µ¿ª
+    // 3) ì²´í¬ì„¬ ê³„ì‚°: magic ì œì™¸í•œ ë‚˜ë¨¸ì§€(header ë° magic) ëŒ€ìƒ
     const uint8_t* csStart = buf + sizeof(msg->magic);
     size_t        csLen = outTotal - sizeof(msg->magic);
     uint32_t      crc = calculateCRC32(csStart, csLen);

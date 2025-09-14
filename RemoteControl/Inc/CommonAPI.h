@@ -1,7 +1,9 @@
+#pragma once
 #include <WinSock2.h>
 #include <cstdint>
 
-// sock·ÎºÎÅÍ Á¤È®È÷ len ¹ÙÀÌÆ®¸¦ ¹ŞÀ» ¶§±îÁö ¹İº¹ È£Ãâ
+// ì†Œì¼“ì—ì„œ ì •í™•íˆ len ë°”ì´íŠ¸ë¥¼ ë°›ì„ ë•Œê¹Œì§€ ë°˜ë³µ í˜¸ì¶œ
 bool recvn(SOCKET sock, void* buf, size_t len);
 
+// ì†Œì¼“ìœ¼ë¡œ ì •í™•íˆ totalBytes ë°”ì´íŠ¸ë¥¼ ì „ì†¡
 int sendn(SOCKET sock, const char* buffer, int totalBytes);

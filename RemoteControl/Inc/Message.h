@@ -4,6 +4,19 @@
 #pragma comment(lib, "ws2_32")
 #include <cstdint>
 
+// 64비트 네트워크 바이트 순서 변환 함수들
+// Windows에서는 htonll/ntohll이 정의되어 있지 않을 수 있음
+#ifndef htonll
+#define htonll(x) ((1==htonl(1)) ? (x) : ((uint64_t)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
+#endif
+
+#ifndef ntohll
+#define ntohll(x) ((1==ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
+#endif
+
+// 매직 넘버 상수 정의
+constexpr uint32_t MESSAGE_MAGIC_NUMBER = 0x424D4350;  // "BMCP"
+
 #pragma pack(push, 1)
 struct Message {
     uint32_t magic;         // 메시지 식별용 매직 넘버 (예: 0x424D4350 = "BMCP")

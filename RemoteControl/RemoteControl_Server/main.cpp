@@ -3,15 +3,63 @@
 #include <cstdio>
 #include <vector>
 #include <algorithm>
+#include <memory>
 #include <Ws2tcpip.h>     // inet_ntop, getaddrinfo
 
 #pragma comment(lib, "ws2_32.lib")
+
 #include "Message.h"
+#include "CommonAPI.h"
 
 #include <mysql_driver.h>
 #include <mysql_connection.h>
 #include <cppconn/prepared_statement.h>
 #include <cppconn/resultset.h>
+
+constexpr int SERVER_PORT = 25000;
+
+// RAII를 위한 소켓 래퍼 클래스
+class SocketRAII {
+private:
+    SOCKET sock_;
+public:
+    explicit SocketRAII(SOCKET s = INVALID_SOCKET) : sock_(s) {}
+    
+    ~SocketRAII() {
+        if (sock_ != INVALID_SOCKET) {
+            closesocket(sock_);
+        }
+    }
+    
+    // 이동 생성자 및 할당 연산자
+    SocketRAII(SocketRAII&& other) noexcept : sock_(other.sock_) {
+        other.sock_ = INVALID_SOCKET;
+    }
+    
+    SocketRAII& operator=(SocketRAII&& other) noexcept {
+        if (this != &other) {
+            if (sock_ != INVALID_SOCKET) {
+                closesocket(sock_);
+            }
+            sock_ = other.sock_;
+            other.sock_ = INVALID_SOCKET;
+        }
+        return *this;
+    }
+    
+    // 복사 생성자 및 할당 연산자 삭제
+    SocketRAII(const SocketRAII&) = delete;
+    SocketRAII& operator=(const SocketRAII&) = delete;
+    
+    SOCKET get() const { return sock_; }
+    SOCKET release() {
+        SOCKET temp = sock_;
+        sock_ = INVALID_SOCKET;
+        return temp;
+    }
+    
+    bool valid() const { return sock_ != INVALID_SOCKET; }
+};
 
 // ——— 클라이언트 정보용 구조체 ———
 struct SenderInfo {
@@ -40,8 +88,6 @@ std::vector<ReceiverInfo>          g_receivers;
 DWORD WINAPI ClientHandshake(LPVOID lpParam);
 DWORD WINAPI MatchThread(LPVOID lpParam);
 DWORD WINAPI ForwardThread(LPVOID lpParam);
-bool recvn_server(SOCKET sock, void* buf, size_t len);
-int sendn_server(SOCKET sock, const char* buf, int len);
 
 // ——— 클라이언트 핸드셰이크 처리 쓰레드 ———
 DWORD WINAPI ClientHandshake(LPVOID lpParam) {
@@ -49,7 +95,7 @@ DWORD WINAPI ClientHandshake(LPVOID lpParam) {
     FullRequestHeader hdr{};
 
     // 1. 요청 헤더 수신
-    if (!recvn_server(s, &hdr, sizeof(hdr))) {
+    if (!recvn(s, &hdr, sizeof(hdr))) {
         closesocket(s);
         return 0;
     }
@@ -219,7 +265,7 @@ int main() {
     // 5. INADDR_ANY(0.0.0.0) 바인딩 → 모든 NIC로부터 연결 허용
     SOCKADDR_IN addr = {};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(25000);
+    addr.sin_port = htons(SERVER_PORT);
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     if (bind(listenSock, (SOCKADDR*)&addr, sizeof(addr)) == SOCKET_ERROR) {
         printf("bind() failed: %d\n", WSAGetLastError());
@@ -291,39 +337,39 @@ DWORD WINAPI MatchThread(LPVOID) {
 
 // ——— 데이터 포워딩 쓰레드 ———
 DWORD WINAPI ForwardThread(LPVOID lpParam) {
-    ForwardParam* p = (ForwardParam*)lpParam;
-    SOCKET sendSock = p->senderSock;
-    SOCKET recvSock = p->recvSock;
-    delete p;
+    std::unique_ptr<ForwardParam> p(static_cast<ForwardParam*>(lpParam));
+    
+    // RAII로 소켓 관리
+    SocketRAII sendSock(p->senderSock);
+    SocketRAII recvSock(p->recvSock);
 
     // Message 헤더 크기
     size_t headerSize = offsetof(Message, payload);
     while (true) {
         // 1) 헤더 수신
         std::vector<uint8_t> headerBuf(headerSize);
-        if (!recvn_server(sendSock, headerBuf.data(), headerSize)) break;
+        if (!recvn(sendSock.get(), headerBuf.data(), headerSize)) break;
+        
         // 2) payloadSize 파싱
         Message* mh = reinterpret_cast<Message*>(headerBuf.data());
-        if (ntohl(mh->magic) != 0x424D4350) break;
+        if (ntohl(mh->magic) != MESSAGE_MAGIC_NUMBER) break;
         uint64_t payloadSize = ntohll(mh->payloadSize);
         size_t totalSize = headerSize + payloadSize;
-        // 3) 전체 버퍼 할당
-        uint8_t* buf = new uint8_t[totalSize];
-        memcpy(buf, headerBuf.data(), headerSize);
-        if (!recvn_server(sendSock, buf + headerSize, payloadSize)) { delete[] buf; break; }
+        
+        // 3) 전체 버퍼 할당 (RAII로 자동 해제)
+        auto buf = std::make_unique<uint8_t[]>(totalSize);
+        memcpy(buf.get(), headerBuf.data(), headerSize);
+        if (!recvn(sendSock.get(), buf.get() + headerSize, payloadSize)) break;
+        
         // 4) 수신자에게 전송
-        if (sendn_server(recvSock, (char*)buf, (int)totalSize) == SOCKET_ERROR) { delete[] buf; break; }
-        delete[] buf;
+        if (sendn(recvSock.get(), reinterpret_cast<char*>(buf.get()), static_cast<int>(totalSize)) == SOCKET_ERROR) break;
     }
-
-    closesocket(sendSock);
-    closesocket(recvSock);
 
     // **벡터에서 sender 정보 삭제**
     EnterCriticalSection(&g_cs);
     auto it = std::find_if(
         g_senders.begin(), g_senders.end(),
-        [sendSock](const SenderInfo& si) { return si.sock == sendSock; }
+        [&sendSock](const SenderInfo& si) { return si.sock == sendSock.get(); }
     );
     if (it != g_senders.end()) {
         g_senders.erase(it);
@@ -331,28 +377,4 @@ DWORD WINAPI ForwardThread(LPVOID lpParam) {
     LeaveCriticalSection(&g_cs);
 
     return 0;
-}
-
-
-// ——— 유틸: 정확히 recv(len) 바이트 읽기 ———
-bool recvn_server(SOCKET sock, void* buf, size_t len) {
-    uint8_t* ptr = (uint8_t*)buf;
-    size_t rec = 0;
-    while (rec < len) {
-        int r = recv(sock, (char*)(ptr + rec), int(len - rec), 0);
-        if (r <= 0) return false;
-        rec += r;
-    }
-    return true;
-}
-
-// ——— 유틸: send 전부 보내기 ———
-int sendn_server(SOCKET sock, const char* buf, int len) {
-    int sent = 0;
-    while (sent < len) {
-        int n = send(sock, buf + sent, len - sent, 0);
-        if (n == SOCKET_ERROR) return SOCKET_ERROR;
-        sent += n;
-    }
-    return sent;
 }

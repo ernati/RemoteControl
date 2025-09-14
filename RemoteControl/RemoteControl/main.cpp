@@ -1,88 +1,89 @@
-#pragma once
+// RemoteControl Client Application
+// main.cppëŠ” êµ¬í˜„ íŒŒì¼ì´ë¯€ë¡œ #pragma onceê°€ í•„ìš”í•˜ì§€ ì•ŠìŠµë‹ˆë‹¤.
+
 #include <CCaptureScreenAndSendBitMap.h>
 #include <CPrintScreen.h>
 #include <CRemoteControlRecvMode.h>
-
 #include <CRemoteControlSendMode.h>
 
 #include <iostream>
 #include <string>
 #include <cstdlib>
+#include <memory>  // std::unique_ptrë¥¼ ìœ„í•´ ì¶”ê°€
 
 #define LOCAL_SERVER "127.0.0.1"
 #define INNER_SERVER "192.168.45.15"
 #define SERVICE_SERVER "59.14.59.1"
 
+// ì „ì—­ í¬ì¸í„°ë“¤ - ì¶”í›„ RAII íŒ¨í„´ìœ¼ë¡œ ê°œì„  í•„ìš”
 CRemoteControlRecvMode* RecvMode = nullptr;
 CCaptureScreenAndSendBitMap* pCaptureScreen = nullptr;
 CPrintScreen* g_printScreen = nullptr;
 CRemoteControlSendMode* server = nullptr;
 
-// À©µµ¿ì ÇÁ·Î½ÃÀú: Ã¢ÀÇ ¸Ş½ÃÁö¸¦ Ã³¸®ÇÕ´Ï´Ù. - Ã¢ »ı¼º, Å¸ÀÌ¸Ó ¼³Á¤, È­¸é Ä¸ÃÄ ¹× ¾÷µ¥ÀÌÆ®
-    // DispatchMessage ÇÔ¼ö¿¡¼­ È£ÃâµÊ.
-    // Å¬·¡½º ³»¿¡ static CALLBACK ¸â¹ö ÇÔ¼ö¸¦ ¼±¾ğÇÏ¸é, ÀÌ ÇÔ¼ö´Â Å¬·¡½ºÀÇ ÀÎ½ºÅÏ½º(Áï, this Æ÷ÀÎÅÍ)¸¦ °®Áö ¾ÊÀ½.
+// ìœˆë„ìš° ê·¸ë¦¬ê¸° ì²˜ë¦¬ í•¨ìˆ˜ ë¶„ë¦¬
+void HandleWindowPaint(HWND hwnd) {
+    PAINTSTRUCT ps;
+    HDC hdc = BeginPaint(hwnd, &ps);
+
+    // ì°½ í´ë¼ì´ì–¸íŠ¸ ì˜ì—­ì˜ ì¢Œí‘œë¥¼ ê²€ì‚¬
+    RECT rect;
+    GetClientRect(hwnd, &rect);
+    int winWidth = rect.right - rect.left;
+    int winHeight = rect.bottom - rect.top;
+
+    if (RecvMode && RecvMode->m_hBitmap != NULL) {
+        // ë©”ëª¨ë¦¬ DC ìƒì„± ë° ë¹„íŠ¸ë§µ ì„ íƒ
+        HDC hMemDC = CreateCompatibleDC(hdc);
+        if (hMemDC == NULL) {
+            printf("CreateCompatibleDC ì‹¤íŒ¨!\n");
+            EndPaint(hwnd, &ps);
+            return;
+        }
+
+        HBITMAP hOldBmp = (HBITMAP)SelectObject(hMemDC, RecvMode->m_hBitmap);
+        if (hOldBmp == NULL) {
+            printf("SelectObject ì‹¤íŒ¨!\n");
+            DeleteDC(hMemDC);
+            EndPaint(hwnd, &ps);
+            return;
+        }
+
+        // ë¹„íŠ¸ë§µ ì •ë³´ íšë“
+        BITMAP bm;
+        GetObject(RecvMode->m_hBitmap, sizeof(BITMAP), &bm);
+
+        // í™”ë©´ì— ë¹„íŠ¸ë§µ ê·¸ë¦¬ê¸° (í¬ê¸° ì¡°ì •)
+        StretchBlt(hdc, 0, 0, winWidth, winHeight, hMemDC, 0, 0, bm.bmWidth, bm.bmHeight, SRCCOPY);
+
+        // ë¦¬ì†ŒìŠ¤ ì •ë¦¬
+        SelectObject(hMemDC, hOldBmp);
+        DeleteDC(hMemDC);
+    }
+
+    EndPaint(hwnd, &ps);
+}
+
+// ìœˆë„ìš° í”„ë¡œì‹œì €: ì°½ì˜ ë©”ì‹œì§€ë¥¼ ì²˜ë¦¬í•©ë‹ˆë‹¤.
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    //1. uMsg¿¡ µû¶ó Ã³¸®
     switch (uMsg) {
     case WM_CREATE:
-        // Å¸ÀÌ¸Ó ¼³Á¤: ÀÏÁ¤ ÁÖ±â·Î È­¸é Ä¸ÃÄ ¹× ¾÷µ¥ÀÌÆ®
-        // SetTimer ÇÔ¼ö: Å¸ÀÌ¸Ó¸¦ ¼³Á¤ÇÏ°í, 3¹øÂ° ÆÄ¶ó¹ÌÅÍ( CAPTURE_INTERVAL )°¡ °æ°úÇÒ ¶§¸¶´Ù ÁöÁ¤µÈ Ã¢ÀÇ ¸Ş½ÃÁö Å¥¿¡ WM_TIMER ¸Ş½ÃÁö¸¦ ¹ß»ı½ÃÅ´.
-        SetTimer(hwnd, 1, pCaptureScreen->GetCaptureInterval(), NULL);
+        // íƒ€ì´ë¨¸ ì„¤ì •: ì£¼ê¸°ì  í™”ë©´ ìº¡ì²˜ ë° ì—…ë°ì´íŠ¸
+        if (pCaptureScreen) {
+            SetTimer(hwnd, 1, pCaptureScreen->GetCaptureInterval(), NULL);
+        }
         return 0;
 
     case WM_TIMER:
-        // 1. ¼³Á¤µÈ ½Ã°£¸¶´Ù È­¸éÃâ·Â
-
-        if (RecvMode->m_hBitmap != NULL) {
-            //printf("È­¸éÀ» Ãâ·ÂÇÕ´Ï´Ù!\n");
+        // ì£¼ê¸°ì  ì‹œê°„ë§ˆë‹¤ í™”ë©´ê°±ì‹ 
+        if (RecvMode && RecvMode->m_hBitmap != NULL) {
             InvalidateRect(hwnd, NULL, TRUE);
         }
         return 0;
 
-    case WM_PAINT: {
-        //1. BeginPaint - Window¿¡ ÀÇÇØ ¹«È¿È­µÈ( ´Ù½Ã ±×·Á¾ß ÇÏ´Â ) ¾÷µ¥ÀÌÆ® ¿µ¿ªÀ» È®ÀÎÇÏ¿©, ±× ¿µ¿ªÀÇ Á¤º¸¸¦ PAINTSTRUCT ±¸Á¶Ã¼¿¡ ÀúÀå.
-        // ÀÌÈÄ, ÇØ´ç ¿µ¿ªÀ» ±×¸®±â À§ÇÑ DC ÇÚµéÀ» ¹İÈ¯.
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
-
-        // 2. Ã¢ Å¬¶óÀÌ¾ğÆ® ¿µ¿ªÀÇ ÁÂÇ¥¸¦ °Ë»ö.
-        // ¿ŞÂÊ À§ ÁÂÇ¥(0, 0), ¿À¸¥ÂÊ ¾Æ·¡ ÁÂÇ¥(Ã¢ÀÇ ³Êºñ, Ã¢ÀÇ ³ôÀÌ)
-        RECT rect;
-        GetClientRect(hwnd, &rect);
-        int winWidth = rect.right - rect.left;
-        int winHeight = rect.bottom - rect.top;
-
-        if (RecvMode->m_hBitmap != NULL) {
-
-            // 3. È¹µæÇÑ ±âÁ¸ DC¿Í µ¿ÀÏÇÑ ¼Ó¼ºÀ» °¡Áö´Â DC¸¦ ¸Ş¸ğ¸®¿¡ »ı¼ºÇÏ°í, ±× ÇÚµéÀ» È¹µæ. - ÀÌ¹ÌÁö Ã³¸®´Â ¸Ş¸ğ¸® DC¿¡¼­ ¼öÇà.
-            // SelectObject - DC°¡ Æ¯Á¤ GDI °´Ã¼( ¿©±â¼­´Â ºñÆ®¸Ê )À» ¼±ÅÃÇÏµµ·Ï ÇÏ¿©, ÀÌÈÄ ±×¸®±â ÀÛ¾÷ÀÌ ÇØ´ç °´Ã¼ÀÇ ¼Ó¼ºÀ» »ç¿ëÇÏµµ·Ï ÇÔ.
-            HDC hMemDC = CreateCompatibleDC(hdc);
-            if (hMemDC == NULL) {
-                printf("CreateCompatibleDC Fail!\n");
-            }
-
-            HBITMAP hOldBmp = (HBITMAP)SelectObject(hMemDC, RecvMode->m_hBitmap); // hOldBmp - ÀÌÀü¿¡ DC¿¡ ¼±ÅÃµÇ¾î ÀÖ´ø ºñÆ®¸Ê °´Ã¼ÀÇ ÇÚµéÀ» ÀúÀå
-            if (hOldBmp == NULL) {
-                printf("SelectObject Fail!\n");
-            }
-
-            // 4. GetObject - ºñÆ®¸Ê Á¤º¸¸¦ ¹öÆÛ( BITMAP ±¸Á¶Ã¼ )¿¡ ÀúÀå
-            BITMAP bm;
-            GetObject(RecvMode->m_hBitmap, sizeof(BITMAP), &bm);
-
-            // 5. Src DC( Memory DC )·ÎºÎÅÍ ÇÈ¼¿ µ¥ÀÌÅÍ( Àü¿ª º¯¼ö¿¡ ÀúÀåµÈ Ä¸ÃÄµÈ È­¸é )À» Dest DC( ÀüÃ¼ È­¸é¿¡ ´ëÇÑ Device Context )¿¡ º¹»çÇÔ ( SRCCOPY - ´Ü¼ø º¹»ç )
-            // ´ë»ó »ç°¢ÇüÀÇ Å©±â¿¡ ¸Â°Ô È®´ë ¶Ç´Â Ãà¼ÒÇÏ¿© º¹»ç
-            StretchBlt(hdc, 0, 0, winWidth, winHeight, hMemDC, 0, 0, bm.bmWidth, bm.bmHeight, SRCCOPY);
-
-            // 6. ¼±ÅÃ °´Ã¼ ¿øº¹ ÈÄ ¸Ş¸ğ¸® DC »èÁ¦ - ¸Ş¸ğ¸® ´©¼ö ¹æÁö
-            SelectObject(hMemDC, hOldBmp);
-            DeleteDC(hMemDC);
-        }
-
-        //7. EndPaint - BeginPaint ÇÔ¼ö·ÎºÎÅÍ ¹İÈ¯µÈ DC ÇÚµéÀ» ÇØÁ¦
-        EndPaint(hwnd, &ps);
+    case WM_PAINT:
+        HandleWindowPaint(hwnd);
         return 0;
-    }
 
     case WM_DESTROY:
         KillTimer(hwnd, 1);
@@ -94,19 +95,30 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
 DWORD WINAPI ThreadFunctionRecv(LPVOID lpParam)
 {
-    // ÄÜ¼Ö ÇÒ´ç ¹× Ç¥ÁØ Ãâ·Â ÀçÁöÁ¤
+    // ì½˜ì†” í• ë‹¹ ë° í‘œì¤€ ì¶œë ¥ ë¦¬ë‹¤ì´ë ‰ì…˜
     AllocConsole();
     FILE* pCout;
     freopen_s(&pCout, "CONOUT$", "w", stdout);
-    printf("ÄÜ¼Ö Ã¢ÀÌ ÇÒ´çµÇ¾ú½À´Ï´Ù.\n");
+    printf("ì½˜ì†” ì°½ì´ í• ë‹¹ë˜ì—ˆìŠµë‹ˆë‹¤.\n");
     
     
-    // lpParamÀ» »ç¿ëÇÏ¿© Àü´ŞµÈ µ¥ÀÌÅÍ¸¦ Ã³¸®ÇÒ ¼ö ÀÖ½À´Ï´Ù.
+    // lpParamì„ ì‚¬ìš©í•˜ì—¬ ì „ë‹¬ëœ ë°ì´í„°ë¥¼ ì²˜ë¦¬í•  ìˆ˜ ìˆìŠµë‹ˆë‹¤.
 
     HINSTANCE hInstance = GetModuleHandle(NULL);
 
-    pCaptureScreen = new CCaptureScreenAndSendBitMap();
-    g_printScreen = new CPrintScreen(hInstance);
+    // ì§€ì—­ì ìœ¼ë¡œ ê°ì²´ ìƒì„± (ì „ì—­ í¬ì¸í„° ëŒ€ì‹  ì‚¬ìš©)
+    auto localCaptureScreen = std::make_unique<CCaptureScreenAndSendBitMap>();
+    auto localPrintScreen = std::make_unique<CPrintScreen>(hInstance);
+
+    // ì•ˆì „í•œ í¬ì¸í„° í• ë‹¹ì„ ìœ„í•œ ì²´í¬
+    if (!localCaptureScreen || !localPrintScreen) {
+        std::cerr << "ê°ì²´ ìƒì„± ì‹¤íŒ¨" << std::endl;
+        return -1;
+    }
+
+    // ì „ì—­ í¬ì¸í„°ì— í• ë‹¹ (ê¸°ì¡´ ì½”ë“œì™€ í˜¸í™˜ì„±ì„ ìœ„í•´)
+    pCaptureScreen = localCaptureScreen.get();
+    g_printScreen = localPrintScreen.get();
 
     g_printScreen->setCaptureScreen(pCaptureScreen);
     g_printScreen->sethInstance(hInstance);
@@ -114,26 +126,26 @@ DWORD WINAPI ThreadFunctionRecv(LPVOID lpParam)
 
     //1. null check
     if (!g_printScreen->m_hInstance) {
-        std::cerr << "m_captureScreen is nullptr" << std::endl;
-        return false;
+        std::cerr << "m_hInstance is nullptr" << std::endl;
+        return -1;
     }
 
-    // 2. À©µµ¿ì Å¬·¡½º µî·Ï
+    // 2. ìœˆë„ìš° í´ë˜ìŠ¤ ë“±ë¡
     const wchar_t CLASS_NAME[] = L"ResponsiveScreenCaptureWindowClass";
 
-    // 2.1 À©µµ¿ì Å¬·¡½º ±¸Á¶Ã¼ ÃÊ±âÈ­ ¹× µî·Ï
+    // 2.1 ìœˆë„ìš° í´ë˜ìŠ¤ êµ¬ì¡°ì²´ ì´ˆê¸°í™” ë° ë“±ë¡
     WNDCLASS wc = {};
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = g_printScreen->m_hInstance;
     wc.lpszClassName = CLASS_NAME;
 
-    // 2.2 À©µµ¿ì Å¬·¡½º µî·Ï ½ÇÆĞ ½Ã ¿¡·¯ ¸Ş½ÃÁö Ãâ·Â ÈÄ Á¾·á
+    // 2.2 ìœˆë„ìš° í´ë˜ìŠ¤ ë“±ë¡ ì‹¤íŒ¨ ì‹œ ì˜¤ë¥˜ ë©”ì‹œì§€ ì¶œë ¥ í›„ ì¢…ë£Œ
     if (!RegisterClass(&wc)) {
-        std::cerr << "À©µµ¿ì Å¬·¡½º µî·Ï ½ÇÆĞ" << std::endl;
+        std::cerr << "ìœˆë„ìš° í´ë˜ìŠ¤ ë“±ë¡ ì‹¤íŒ¨" << std::endl;
         return -1;
     }
 
-    // 3. Ã¢ »ı¼º
+    // 3. ì°½ ìƒì„±
     HWND hwnd = CreateWindowEx(
         0,
         CLASS_NAME,
@@ -143,37 +155,48 @@ DWORD WINAPI ThreadFunctionRecv(LPVOID lpParam)
         NULL,
         NULL,
         g_printScreen->m_hInstance,
-        g_printScreen->m_captureScreen         // Àü´ŞÇÒ ÆÄ¶ó¹ÌÅÍ
+        g_printScreen->m_captureScreen         // ì‚¬ìš©ì íŒŒë¼ë¯¸í„°
     );
 
     if (!hwnd) {
-        std::cerr << "Ã¢ »ı¼º ½ÇÆĞ" << std::endl;
+        std::cerr << "ì°½ ìƒì„± ì‹¤íŒ¨" << std::endl;
         return -1;
     }
 
-    // 4. Ã¢ Ç¥½Ã
+    // 4. ì°½ í‘œì‹œ
     ShowWindow(hwnd, SW_SHOW);
 
-    // 6. ¸Ş½ÃÁö ·çÇÁ
+    // 6. ë©”ì‹œì§€ ë£¨í”„
     MSG msg = {};
     while (GetMessage(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
 
-    return 0;  // ½º·¹µå°¡ Á¾·áµÉ ¶§ ¹İÈ¯ÇÒ °ª
+    return 0;  // ìŠ¤ë ˆë“œê°€ ì¢…ë£Œë  ë•Œ ë°˜í™˜í•  ê°’
 }
 
 
-//Capture¸¦ À§ÇÑ ThreadFunction
+//Captureì— ê´€í•œ ThreadFunction
 DWORD WINAPI ThreadFunctionSend(LPVOID lpParam)
 {
-    // lpParamÀ» »ç¿ëÇÏ¿© Àü´ŞµÈ µ¥ÀÌÅÍ¸¦ Ã³¸®ÇÒ ¼ö ÀÖ½À´Ï´Ù.
+    // lpParamì„ ì‚¬ìš©í•˜ì—¬ ì „ë‹¬ëœ ë°ì´í„°ë¥¼ ì²˜ë¦¬í•  ìˆ˜ ìˆìŠµë‹ˆë‹¤.
 
     HINSTANCE hInstance = GetModuleHandle(NULL);
 
-    pCaptureScreen = new CCaptureScreenAndSendBitMap();
-    g_printScreen = new CPrintScreen(hInstance);
+    // ì§€ì—­ì ìœ¼ë¡œ ê°ì²´ ìƒì„± (ì „ì—­ í¬ì¸í„° ëŒ€ì‹  ì‚¬ìš©)
+    auto localCaptureScreen = std::make_unique<CCaptureScreenAndSendBitMap>();
+    auto localPrintScreen = std::make_unique<CPrintScreen>(hInstance);
+
+    // ì•ˆì „í•œ í¬ì¸í„° í• ë‹¹ì„ ìœ„í•œ ì²´í¬
+    if (!localCaptureScreen || !localPrintScreen) {
+        std::cerr << "ê°ì²´ ìƒì„± ì‹¤íŒ¨" << std::endl;
+        return -1;
+    }
+
+    // ì „ì—­ í¬ì¸í„°ì— í• ë‹¹ (ê¸°ì¡´ ì½”ë“œì™€ í˜¸í™˜ì„±ì„ ìœ„í•´)
+    pCaptureScreen = localCaptureScreen.get();
+    g_printScreen = localPrintScreen.get();
 
     g_printScreen->setCaptureScreen(pCaptureScreen);
     g_printScreen->sethInstance(hInstance);
@@ -181,59 +204,32 @@ DWORD WINAPI ThreadFunctionSend(LPVOID lpParam)
 
     //1. null check
     if (!g_printScreen->m_hInstance) {
-        std::cerr << "m_captureScreen is nullptr" << std::endl;
-        return false;
+        std::cerr << "m_hInstance is nullptr" << std::endl;
+        return -1;
     }
 
-    //2. ÀÏÁ¤ ½Ã°£ ¸¶´Ù È­¸é Ä¸Ã³
-    // ¹İº¹ °£°İ ¼³Á¤ (¿¹: 100ms)
+    //2. ì£¼ê¸°ì  ì‹œê°„ ë§ˆë‹¤ í™”ë©´ ìº¡ì²˜
+    // ë°˜ë³µ ì‹¤í–‰ ê°„ê²© (ì˜ˆ: 100ms)
     while (true) {
-        //2.1 È­¸é Ä¸Ã³
+        //2.1 í™”ë©´ ìº¡ì²˜
         pCaptureScreen->CaptureScreen();
         if (pCaptureScreen->CheckSuccessCapture()) {
-            // 2. ÀÌÀü Ä¸ÃÄµÈ ÀÌ¹ÌÁö°¡ ÀÖ´Ù¸é ÇØÁ¦
+            // 2. ìƒˆë¡œ ìº¡ì²˜ëœ ì´ë¯¸ì§€ê°€ ìˆë‹¤ë©´ ê°±ì‹ 
             pCaptureScreen->UpdateNewBitmap();
 
-            //2.2 ThreadClient ³» BITMAP º¯¼ö·Î °ª ÀÌµ¿
-            server->m_hBitmap = pCaptureScreen->GetnewBitmap();
-
-            //// 2.3 BITMAP Á¤º¸ Ãâ·Â
-            //if (server->m_hBitmap) {
-            //    BITMAP bmpInfo;
-            //    if (GetObject(server->m_hBitmap, sizeof(BITMAP), &bmpInfo)) {
-            //        std::cout << "=== Captured BITMAP Info ===\n";
-            //        std::cout << "Width       : " << bmpInfo.bmWidth << "\n";
-            //        std::cout << "Height      : " << bmpInfo.bmHeight << "\n";
-            //        std::cout << "Planes      : " << bmpInfo.bmPlanes << "\n";
-            //        std::cout << "BitCount    : " << bmpInfo.bmBitsPixel << "\n";
-            //        std::cout << "WidthBytes  : " << bmpInfo.bmWidthBytes << "\n";
-            //        std::cout << "NumberOfBits: " << bmpInfo.bmHeight * bmpInfo.bmWidthBytes * 8 << "\n";
-            //        std::cout << "Reserved    : " << bmpInfo.bmBits << "\n";
-            //        std::cout << "============================\n";
-            //    }
-            //    else {
-            //        std::cerr << "GetObject failed: " << GetLastError() << std::endl;
-            //    }
-            //}
-            //// ¿¹»ó Ãâ·Â
-            //== = Captured BITMAP Info == =
-            //    Width       : 2560
-            //    Height : 1440
-            //    Planes : 1
-            //    BitCount : 32
-            //    WidthBytes : 10240
-            //    NumberOfBits : 117964800
-            //    Reserved : 0000000000000000
-            //============================
+            //2.2 ThreadClient ì˜ BITMAP ì£¼ì†Œê°’ ì„ ì´ë™
+            if (server) {  // null ì²´í¬ ì¶”ê°€
+                server->m_hBitmap = pCaptureScreen->GetnewBitmap();
+            }
         }
 
-        //Sleep(100);
+        //Sleep(100);  // CPU ì‚¬ìš©ë¥  ê°œì„ ì„ ìœ„í•´ Sleep ì£¼ì„ í•´ì œ ê³ ë ¤
     }
 
-    return 0;  // ½º·¹µå°¡ Á¾·áµÉ ¶§ ¹İÈ¯ÇÒ °ª
+    return 0;  // ìŠ¤ë ˆë“œê°€ ì¢…ë£Œë  ë•Œ ë°˜í™˜í•  ê°’
 }
 
-// »ç¿ë¹ı Ãâ·Â
+// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½
 void PrintHelp(const char* progName) {
     printf("Usage:\n");
     printf("  %s <network> <authId> <authPw> recv <myId> <targetId>\n", progName);
@@ -253,7 +249,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    // 1) ³×Æ®¿öÅ© ¼±ÅÃ
+    // 1) ï¿½ï¿½Æ®ï¿½ï¿½Å© ï¿½ï¿½ï¿½ï¿½
     const char* serverIp = nullptr;
     std::string net(argv[1]);
     if (net == "loopback") {
@@ -271,11 +267,11 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    // 2) ÀÎÁõ Á¤º¸
+    // 2) ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     const char* authId = argv[2];
     const char* authPw = argv[3];
 
-    // 3. ¿ø°İ È­¸é °øÀ¯¿¡ ´ëÇÑ ÆÄ¶ó¹ÌÅÍ
+    // 3. ï¿½ï¿½ï¿½ï¿½ È­ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ä¶ï¿½ï¿½ï¿½ï¿½
     std::string mode(argv[4]);
     int nRet = 0;
 
@@ -288,50 +284,75 @@ int main(int argc, char* argv[]) {
         uint32_t myId = static_cast<uint32_t>(std::stoul(argv[5]));
         uint32_t targetId = static_cast<uint32_t>(std::stoul(argv[6]));
 
-        RecvMode = new CRemoteControlRecvMode(authId, authPw, myId, targetId);
+        // ë©”ëª¨ë¦¬ ê´€ë¦¬ ê°œì„ : unique_ptr ì‚¬ìš©
+        auto recvModePtr = std::make_unique<CRemoteControlRecvMode>(authId, authPw, myId, targetId);
+        RecvMode = recvModePtr.get();  // ê¸°ì¡´ ì½”ë“œì™€ í˜¸í™˜ì„±ì„ ìœ„í•´
 
-        // Ä¸Ã³¸¦ À§ÇÑ Thread »ı¼º
+        // ìº¡ì²˜ì— ê´€í•œ Thread ìƒì„±
         HANDLE hThread = CreateThread(
-            NULL,          // ±âº» º¸¾È ¼Ó¼º
-            0,             // ±âº» ½ºÅÃ Å©±â
-            ThreadFunctionRecv, // ½º·¹µå ÇÔ¼ö
-            NULL,         // ½º·¹µå ÇÔ¼ö¿¡ Àü´ŞÇÒ ¸Å°³º¯¼ö
-            0,             // »ı¼º Áï½Ã ½ÇÇà
-            NULL           // ½º·¹µå ID (ÇÊ¿ä ½Ã ÀúÀå)
+            NULL,          // ê¸°ë³¸ ë³´ì•ˆ ì†ì„±
+            0,             // ê¸°ë³¸ ìŠ¤íƒ í¬ê¸°
+            ThreadFunctionRecv, // ìŠ¤ë ˆë“œ í•¨ìˆ˜
+            NULL,         // ìŠ¤ë ˆë“œ í•¨ìˆ˜ì— ì „ë‹¬í•  ë§¤ê°œë³€ìˆ˜
+            0,             // ìƒì„± ì¦‰ì‹œ ì‹¤í–‰
+            NULL           // ìŠ¤ë ˆë“œ ID (í•„ìš” ì‹œ ì‚¬ìš©)
         );
+
+        if (hThread == NULL) {
+            printf("ThreadFunctionRecv ìƒì„± ì‹¤íŒ¨\n");
+            return -1;
+        }
 
         nRet = RecvMode->StartClient(25000, serverIp);
         if (nRet < 0) {
             printf("RecvMode.StartClient() failed, nRet:%d\n", nRet);
         }
 
+        // ìŠ¤ë ˆë“œ ì •ë¦¬
+        if (hThread) {
+            WaitForSingleObject(hThread, INFINITE);
+            CloseHandle(hThread);
+        }
+
     }
     else if (mode == "send") {
-        // send ¸ğµå´Â ID, targetId µÑ ´Ù ÇÊ¿ä
+        // send ï¿½ï¿½ï¿½ï¿½ ID, targetId ï¿½ï¿½ ï¿½ï¿½ ï¿½Ê¿ï¿½
         if (argc < 6) {
             PrintHelp(argv[0]);
             return -1;
         }
         uint32_t myId = static_cast<uint32_t>(std::stoul(argv[5]));
 
+        // ë©”ëª¨ë¦¬ ê´€ë¦¬ ê°œì„ : unique_ptr ì‚¬ìš©
+        auto serverPtr = std::make_unique<CRemoteControlSendMode>(authId, authPw, myId);
+        server = serverPtr.get();  // ê¸°ì¡´ ì½”ë“œì™€ í˜¸í™˜ì„±ì„ ìœ„í•´
 
-        server = new CRemoteControlSendMode(authId, authPw, myId);
-
-        // Window¸¦ À§ÇÑ Thread »ı¼º
+        // Windowì— ê´€í•œ Thread ìƒì„±
         HANDLE hThread = CreateThread(
-            NULL,          // ±âº» º¸¾È ¼Ó¼º
-            0,             // ±âº» ½ºÅÃ Å©±â
-            ThreadFunctionSend, // ½º·¹µå ÇÔ¼ö
-            NULL,         // ½º·¹µå ÇÔ¼ö¿¡ Àü´ŞÇÒ ¸Å°³º¯¼ö
-            0,             // »ı¼º Áï½Ã ½ÇÇà
-            NULL           // ½º·¹µå ID (ÇÊ¿ä ½Ã ÀúÀå)
+            NULL,          // ê¸°ë³¸ ë³´ì•ˆ ì†ì„±
+            0,             // ê¸°ë³¸ ìŠ¤íƒ í¬ê¸°
+            ThreadFunctionSend, // ìŠ¤ë ˆë“œ í•¨ìˆ˜
+            NULL,         // ìŠ¤ë ˆë“œ í•¨ìˆ˜ì— ì „ë‹¬í•  ë§¤ê°œë³€ìˆ˜
+            0,             // ìƒì„± ì¦‰ì‹œ ì‹¤í–‰
+            NULL           // ìŠ¤ë ˆë“œ ID (í•„ìš” ì‹œ ì‚¬ìš©)
         );
+
+        if (hThread == NULL) {
+            printf("ThreadFunctionSend ìƒì„± ì‹¤íŒ¨\n");
+            return -1;
+        }
 
         int nRet = 0;
 
         nRet = server->StartClient(25000, serverIp);
         if (nRet < 0) {
-            printf("server.StartServer() failed, nRet:%d\n", nRet);
+            printf("server.StartClient() failed, nRet:%d\n", nRet);
+        }
+
+        // ìŠ¤ë ˆë“œ ì •ë¦¬
+        if (hThread) {
+            WaitForSingleObject(hThread, INFINITE);
+            CloseHandle(hThread);
         }
     }
     else {
